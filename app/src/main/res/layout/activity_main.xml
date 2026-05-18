@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/browser_bg"
+    tools:context=".MainActivity">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBarLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/browser_toolbar_bg">
+
+        <androidx.appcompat.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            app:contentInsetStart="0dp"
+            app:contentInsetEnd="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp">
+
+                <ImageView
+                    android:id="@+id/sslIcon"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_lock"
+                    android:layout_marginEnd="6dp"
+                    android:contentDescription="Security"
+                    app:tint="@color/text_secondary" />
+
+                <EditText
+                    android:id="@+id/urlBar"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/url_bar_bg"
+                    android:hint="Search or enter URL"
+                    android:textColorHint="@color/text_hint"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:singleLine="true"
+                    android:imeOptions="actionGo"
+                    android:inputType="textUri"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:drawableStart="@drawable/ic_search_small"
+                    android:drawablePadding="6dp"
+                    android:selectAllOnFocus="true" />
+
+            </LinearLayout>
+        </androidx.appcompat.widget.Toolbar>
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:max="100"
+            android:progressDrawable="@drawable/progress_bar"
+            android:visibility="gone" />
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            app:tabMode="scrollable"
+            app:tabGravity="fill"
+            app:tabIndicatorHeight="2dp"
+            app:tabIndicatorColor="@color/colorPrimary"
+            app:tabTextColor="@color/text_secondary"
+            app:tabSelectedTextColor="@color/colorPrimary"
+            app:tabMinWidth="100dp"
+            app:tabMaxWidth="200dp"
+            android:visibility="gone" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <FrameLayout
+            android:id="@+id/webViewContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/white" />
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabNewTab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|bottom"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="72dp"
+        android:src="@drawable/ic_add"
+        android:contentDescription="New Tab"
+        app:backgroundTint="@color/colorPrimary"
+        app:tint="@android:color/white"
+        app:fabSize="normal" />
+
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom"
+        android:background="@color/browser_toolbar_bg"
+        android:elevation="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <ImageView android:id="@+id/btnBack" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_back" android:contentDescription="Back" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <ImageView android:id="@+id/btnForward" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_forward" android:contentDescription="Forward" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <ImageView android:id="@+id/btnRefresh" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_refresh" android:contentDescription="Refresh" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <ImageView android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_home" android:contentDescription="Home" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <TextView android:id="@+id/btnTabs" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="1" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/text_primary" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="Tabs" />
+        <ImageView android:id="@+id/btnMenu" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_menu" android:contentDescription="Menu" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+
+    </LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
