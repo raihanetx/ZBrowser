@@ -188,6 +188,14 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    // === HELPER: Find the tab that owns a given WebView ===
+
+    private fun findTabForWebView(webView: WebView): BrowserTab? {
+        val wvIdx = webViews.indexOf(webView)
+        if (wvIdx < 0) return null
+        return tabs.find { it.webViewIndex == wvIdx }
+    }
+
     // === WEBVIEW ===
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -216,22 +224,73 @@ class MainActivity : AppCompatActivity() {
         applyModeSettings(s, desktopMode)
 
         webView.webViewClient = object : WebViewClient() {
+
+            // *** FIX 1: Keep ALL http/https URLs inside the WebView ***
+            // Only override for special schemes (tel, mailto, sms, etc.)
+            // For http/https, return false so WebView handles them internally
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
-                if (url.startsWith("tel:") || url.startsWith("mailto:") || url.startsWith("sms:")) {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    return true
+                val scheme = request.url.scheme?.lowercase() ?: ""
+
+                // Only special schemes go to external apps
+                when (scheme) {
+                    "tel", "mailto", "sms", "geo", "market" -> {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        } catch (e: Exception) {
+                            Toast.makeText(this@MainActivity, "Cannot open: $scheme", Toast.LENGTH_SHORT).show()
+                        }
+                        return true
+                    }
+                    // intent:// scheme - extract URL and load in WebView
+                    "intent" -> {
+                        try {
+                            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                            val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                            if (fallbackUrl != null) {
+                                view?.loadUrl(fallbackUrl)
+                                return true
+                            }
+                            // If there's a resolvable app, let system handle
+                            if (intent.resolveActivity(packageManager) != null) {
+                                startActivity(intent)
+                                return true
+                            }
+                        } catch (e: Exception) {
+                            // Bad intent URL, ignore
+                        }
+                        return true
+                    }
                 }
+
+                // *** ALL http/https URLs stay inside the WebView ***
+                // Return false = WebView loads it internally, NOT the system browser
                 return false
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
+
+                // *** FIX 2: Re-apply desktop mode settings BEFORE every page load ***
+                // This ensures the user-agent and viewport settings are always correct
+                view?.let { wv ->
+                    val tab = findTabForWebView(wv)
+                    if (tab != null) {
+                        applyModeSettings(wv.settings, tab.isDesktopMode)
+                    }
+                }
+
                 url?.let {
                     progressBar.visibility = View.VISIBLE
                     progressBar.progress = 0
-                    tabs.find { t -> t.id == activeTabId }?.url = it
-                    urlBar.setText(it)
+                    // Update URL bar and tab URL only if this is the active tab
+                    val tab = view?.let { findTabForWebView(it) }
+                    if (tab != null) {
+                        tab.url = it
+                        if (tab.id == activeTabId) {
+                            urlBar.setText(it)
+                        }
+                    }
                 }
             }
 
@@ -243,10 +302,13 @@ class MainActivity : AppCompatActivity() {
                     progressBar.visibility = View.GONE
                     swipeRefresh.isRefreshing = false
 
-                    // *** KEY FIX: Re-inject viewport JS on every page load ***
-                    val tab = tabs.find { t -> t.id == activeTabId }
+                    // *** FIX 3: Use the CORRECT tab for this WebView, not just activeTab ***
+                    val tab = findTabForWebView(wv)
                     if (tab?.isDesktopMode == true) {
                         wv.evaluateJavascript(desktopViewportJs, null)
+                    } else {
+                        // Also enforce mobile viewport for mobile mode
+                        wv.evaluateJavascript(mobileViewportJs, null)
                     }
 
                     tab?.let { t ->
@@ -256,8 +318,11 @@ class MainActivity : AppCompatActivity() {
                         if (idx >= 0 && idx < tabLayout.tabCount) {
                             tabLayout.getTabAt(idx)?.text = t.title
                         }
+                        // Only update URL bar if this is the active tab
+                        if (t.id == activeTabId) {
+                            urlBar.setText(pageUrl)
+                        }
                     }
-                    urlBar.setText(pageUrl)
                     updateNavigationButtons()
                 }
             }
@@ -268,8 +333,25 @@ class MainActivity : AppCompatActivity() {
                 progressBar.progress = newProgress
                 if (newProgress == 100) progressBar.visibility = View.GONE
             }
+
+            // *** FIX 4: Properly handle new window requests (target="_blank" links) ***
+            // Use WebViewTransport to capture the URL, then open in a new tab
             override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean {
-                view?.hitTestResult?.extra?.let { addNewTab(it) }
+                // Create a temporary WebView to intercept the URL from the new window request
+                val newWebView = WebView(this@MainActivity)
+                newWebView.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(wv: WebView?, request: WebResourceRequest?): Boolean {
+                        val url = request?.url?.toString() ?: return false
+                        // Open the URL as a new tab in our browser, NOT in system browser
+                        runOnUiThread { addNewTab(url) }
+                        return true
+                    }
+                }
+
+                // Attach the temp WebView to the transport so it receives the URL
+                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                transport?.webView = newWebView
+                resultMsg?.sendToTarget()
                 return true
             }
         }
@@ -482,7 +564,7 @@ class MainActivity : AppCompatActivity() {
     private fun showAbout() {
         MaterialAlertDialogBuilder(this)
             .setTitle("About ZBrowser")
-            .setMessage("ZBrowser v1.1\n\nAndroid browser with Kotlin & WebView.\n\nFeatures: Multi-tab, Desktop mode, Search, Navigation, Bookmarks, Find in page, Share")
+            .setMessage("ZBrowser v1.2\n\nAndroid browser with Kotlin & WebView.\n\nFeatures: Multi-tab, Desktop mode, Search, Navigation, Bookmarks, Find in page, Share")
             .setPositiveButton("OK", null).show()
     }
 
