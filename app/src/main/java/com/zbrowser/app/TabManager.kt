@@ -52,6 +52,9 @@ class TabManager @Inject constructor() {
     fun switchToTab(tabId: Int): BrowserTab? {
         val tab = _tabs.find { it.id == tabId } ?: return null
 
+        // Skip if already the active tab — prevents unnecessary onPause/onResume cycle
+        if (_activeTabId == tabId) return tab
+
         // Pause the previously active tab to free CPU/GPU
         getActiveTab()?.let { oldTab ->
             oldTab.webView?.onPause()

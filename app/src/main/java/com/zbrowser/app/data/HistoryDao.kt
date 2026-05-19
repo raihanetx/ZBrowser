@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface HistoryDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entry: HistoryEntity): Long
 
     @Query("SELECT * FROM history ORDER BY visitedAt DESC")

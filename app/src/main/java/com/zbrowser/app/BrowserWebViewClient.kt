@@ -25,11 +25,11 @@ import kotlinx.coroutines.launch
 /**
  * Custom WebViewClient optimized for maximum smoothness.
  *
- * v3.1 OPTIMIZATIONS:
- * - Debounced history recording (500ms) prevents Room write spam on redirects
- * - onRenderProcessGone gracefully handles WebView renderer crashes
- * - Ad blocker uses O(1) HashSet lookup (see AdBlocker class)
- * - Minimal work in shouldOverrideUrlLoading (fast return path)
+ * v3.2 FIXES:
+ * - onRenderProcessGone: properly removes WebView from parent before destroy
+ * - Debounced history recording (500ms) prevents Room write spam
+ * - Ad blocker uses O(1) HashSet lookup
+ * - Minimal work in shouldOverrideUrlLoading
  */
 class BrowserWebViewClient(
     private val context: Context,
@@ -46,6 +46,7 @@ class BrowserWebViewClient(
         fun onPageLoadError(errorMsg: String, url: String)
         fun onSslError(handler: SslErrorHandler, error: SslError)
         fun onPopupBlocked()
+        fun onRenderProcessGone(webView: WebView)
     }
 
     var callback: Callback? = null
@@ -82,11 +83,6 @@ class BrowserWebViewClient(
         })();
     """.trimIndent()
 
-    /**
-     * FEATURE 4: Ad Blocker — O(1) HashSet lookup via AdBlocker class.
-     * shouldInterceptRequest runs on a background thread by default,
-     * so blocking here does NOT cause UI jank.
-     */
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         if (request != null && adBlocker.shouldBlock(request)) {
             return adBlocker.createBlockedResponse()
@@ -94,9 +90,6 @@ class BrowserWebViewClient(
         return super.shouldInterceptRequest(view, request)
     }
 
-    /**
-     * Fast-path URL override — minimal work for common schemes.
-     */
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
         val scheme = request.url.scheme?.lowercase() ?: ""
@@ -145,19 +138,16 @@ class BrowserWebViewClient(
             val pageUrl = url ?: ""
             val isDesktop = tabLookup(wv)?.isDesktopMode ?: false
 
-            // Apply viewport JS
             if (isDesktop) {
                 wv.evaluateJavascript(desktopViewportJs, null)
             } else {
                 wv.evaluateJavascript(mobileViewportJs, null)
             }
 
-            // FEATURE 4: Inject ad-hiding CSS
             if (adBlocker.isEnabled) {
                 wv.evaluateJavascript(AdBlocker.AD_HIDE_CSS, null)
             }
 
-            // Record history with DEBOUNCE — prevents Room spam on redirects
             if (title.isNotEmpty() && pageUrl.startsWith("http")) {
                 recordHistoryDebounced(title, pageUrl)
             }
@@ -190,36 +180,39 @@ class BrowserWebViewClient(
     }
 
     /**
-     * RENDER PROCESS CRASH GUARD — if the WebView renderer process dies
-     * (GPU fault, OOM, etc.), we don't let it crash the entire app.
-     * Returns true to indicate we handled it.
+     * RENDER PROCESS CRASH GUARD — properly handles WebView renderer crashes.
+     *
+     * FIX: Must remove WebView from its parent ViewGroup before destroying,
+     * otherwise "WebView already has a parent" crash on recovery.
+     *
+     * Delegates to the Callback so the Activity can handle UI recovery
+     * on the main thread.
      */
     override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
         if (view != null) {
+            // Remove from parent before destroy — prevents "already has a parent" crash
+            (view.parent as? android.view.ViewGroup)?.removeView(view)
             view.destroy()
-            // The Activity's handleRenderProcessCrash() will create a new WebView
+            // Notify the Activity on the main thread
+            callback?.onRenderProcessGone(view)
         }
-        return true  // We handled it — don't crash the app
+        return true
     }
 
-    /**
-     * Debounced history recording — waits 500ms after the last page load
-     * before writing to Room, preventing spam on multi-redirect pages.
-     */
     private fun recordHistoryDebounced(title: String, url: String) {
         val dao = historyDao ?: return
         val scope = appScope ?: return
 
         historyJob?.cancel()
         historyJob = scope.launch(Dispatchers.IO) {
-            delay(500) // Debounce window
+            delay(500)
             dao.insert(HistoryEntity(url = url, title = title))
         }
     }
 
     companion object {
         private const val DESKTOP_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 
         @SuppressLint("SetJavaScriptEnabled")
         fun applyModeSettings(settings: WebSettings, desktopMode: Boolean, mobileUserAgent: String? = null) {

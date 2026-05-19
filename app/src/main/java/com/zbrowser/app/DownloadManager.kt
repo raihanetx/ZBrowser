@@ -15,8 +15,12 @@ import java.io.File
  * Handles file downloads from the browser.
  * Uses Android's system DownloadManager for reliable, background-capable downloads
  * with progress notifications and automatic resume on network change.
+ *
+ * Uses applicationContext to avoid memory leaks (injected as @Singleton).
  */
-class DownloadManagerHelper(private val context: Context) {
+class DownloadManagerHelper(context: Context) {
+
+    private val context: Context = context.applicationContext
 
     private val downloadManager by lazy {
         context.getSystemService(Context.DOWNLOAD_SERVICE) as SystemDownloadManager
@@ -40,6 +44,7 @@ class DownloadManagerHelper(private val context: Context) {
 
     /**
      * Start a download using the system DownloadManager.
+     * Includes cookies from the WebView so authenticated downloads work.
      */
     private fun startDownload(url: String, filename: String, mimeType: String, userAgent: String) {
         val request = SystemDownloadManager.Request(Uri.parse(url)).apply {
@@ -47,6 +52,13 @@ class DownloadManagerHelper(private val context: Context) {
             setDescription(context.getString(R.string.app_name))
             setMimeType(mimeType)
             addRequestHeader("User-Agent", userAgent)
+
+            // Include cookies so authenticated downloads don't redirect to login
+            val cookies = android.webkit.CookieManager.getInstance().getCookie(url)
+            if (!cookies.isNullOrEmpty()) {
+                addRequestHeader("Cookie", cookies)
+            }
+
             setNotificationVisibility(
                 SystemDownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
             )

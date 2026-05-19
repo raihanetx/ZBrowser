@@ -5,7 +5,6 @@ import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.net.Uri
 import android.net.http.SslError
-import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -237,7 +236,6 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
 
         // PERFORMANCE: Set a large HTTP cache to reduce network round-trips
         s.cacheMode = WebSettings.LOAD_DEFAULT
-        webView.setHttpCacheSize(50 * 1024 * 1024L) // 50 MB
 
         // Save the mobile UA before overwriting
         if (mobileUserAgent == null) {
@@ -279,15 +277,6 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         // FEATURE 3: Download Manager
         webView.setDownloadListener(downloadManagerHelper.webViewDownloadListener)
 
-        // RENDER PROCESS CRASH GUARD (API 26+)
-        // If the WebView renderer crashes (OOM, GPU fault), we recover
-        // instead of letting the entire app die.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            webView.setRendererTerminatedListener {
-                handleRenderProcessCrash()
-            }
-        }
-
         // Initial visibility — hidden until switched to active
         webView.visibility = View.GONE
 
@@ -326,13 +315,12 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
 
     /**
      * Recover from WebView render process crash without killing the app.
+     * The crashed WebView was already destroyed in onRenderProcessGone().
      */
     private fun handleRenderProcessCrash() {
         val activeTab = tabManager.getActiveTab()
-        if (activeTab?.webView != null) {
-            WebViewPool.release(activeTab.webView!!)
-            activeTab.webView = null
-        }
+        // The old WebView was already destroyed in BrowserWebViewClient.onRenderProcessGone
+        activeTab?.webView = null
 
         // Recreate the WebView and reload
         val newWebView = createWebView(activeTab?.isDesktopMode ?: false)
@@ -342,7 +330,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         currentWebView = newWebView
         activeTab?.url?.let { newWebView.loadUrl(it) }
 
-        Toast.makeText(this, "WebView recovered", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, R.string.webview_recovered, Toast.LENGTH_SHORT).show()
     }
 
     private fun handleNewWindow(resultMsg: android.os.Message?) {
@@ -421,6 +409,13 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         Toast.makeText(this, R.string.popup_blocked_toast, Toast.LENGTH_SHORT).show()
     }
 
+    override fun onRenderProcessGone(webView: WebView) {
+        // Must run on UI thread — render crash callbacks come from a background thread
+        if (!isFinishing && !isDestroyed) {
+            runOnUiThread { handleRenderProcessCrash() }
+        }
+    }
+
     // === TABS (OPTIMIZED — VISIBLE/GONE SWITCHING) ===
 
     /**
@@ -442,7 +437,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         // Add WebView to container (GONE by default from createWebView)
         binding.webViewContainer.addView(webView)
 
-        binding.tabLayout.addTab(binding.tabLayout.newTab().apply { text = getString(R.string.new_tab) }, true)
+        binding.tabLayout.addTab(binding.tabLayout.newTab().apply { text = getString(R.string.new_tab) }, false)
         webView.loadUrl(url)
         switchToTab(tab.id)
         updateTabCount()
@@ -865,17 +860,6 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         val activeId = viewModel.getActiveTabId()
         if (activeId > 0) {
             switchToTab(activeId)
-        }
-    }
-
-    // === EXTENSION: Set WebView HTTP cache size ===
-
-    private fun WebView.setHttpCacheSize(sizeBytes: Long) {
-        try {
-            val method = WebView::class.java.getMethod("setHttpCacheSize", Long::class.javaPrimitiveType)
-            method.invoke(this, sizeBytes)
-        } catch (_: Exception) {
-            // Not available on all API levels — non-critical
         }
     }
 }

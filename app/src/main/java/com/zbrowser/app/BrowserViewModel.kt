@@ -3,6 +3,7 @@ package com.zbrowser.app
 import android.os.Bundle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.savedstate.SavedStateHandle
+import java.io.Serializable
 
 /**
  * ViewModel for the browser that survives configuration changes.
@@ -20,25 +21,33 @@ class BrowserViewModel(private val savedStateHandle: SavedStateHandle) : ViewMod
 
     /**
      * Serializable tab metadata for state preservation.
+     * Implements Serializable so SavedStateHandle can serialize it
+     * across process death (Parcel + Serializable fallback).
      */
     data class TabState(
         val id: Int,
         val title: String,
         val url: String,
         val isDesktopMode: Boolean
-    )
+    ) : Serializable {
+        companion object {
+            private const val serialVersionUID = 1L
+        }
+    }
 
     /** Save current tab states for restoration after config change or process death */
     fun saveTabStates(tabs: List<BrowserTab>, activeTabId: Int, nextTabId: Int) {
         val states = tabs.map { TabState(it.id, it.title, it.url, it.isDesktopMode) }
-        savedStateHandle[KEY_TAB_DATA] = states
+        @Suppress("UNCHECKED_CAST")
+        savedStateHandle[KEY_TAB_DATA] = states as Serializable
         savedStateHandle[KEY_ACTIVE_TAB_ID] = activeTabId
         savedStateHandle[KEY_NEXT_TAB_ID] = nextTabId
     }
 
     /** Restore tab states */
+    @Suppress("UNCHECKED_CAST", "DEPRECATION")
     fun getTabStates(): List<TabState>? {
-        return savedStateHandle.get<List<TabState>>(KEY_TAB_DATA)
+        return (savedStateHandle.get<Serializable>(KEY_TAB_DATA) as? List<TabState>)
     }
 
     fun getActiveTabId(): Int {

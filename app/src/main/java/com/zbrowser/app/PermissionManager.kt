@@ -35,6 +35,7 @@ class PermissionManager(private val activity: Activity) {
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
     private var pendingGeoOrigin: String? = null
     private var pendingPermissionRequest: PermissionRequest? = null
+    private var pendingPermissionRequestCode: Int = RC_CAMERA
 
     fun onGeolocationPermissionsShowPrompt(
         origin: String,
@@ -56,11 +57,18 @@ class PermissionManager(private val activity: Activity) {
     fun onPermissionRequest(request: PermissionRequest) {
         val requestedResources = request.resources
         val neededPermissions = mutableListOf<String>()
+        var requestCode = RC_CAMERA  // Default
 
         for (resource in requestedResources) {
             val permission = RESOURCE_TO_PERMISSION[resource]
             if (permission != null && !hasPermission(permission)) {
                 neededPermissions.add(permission)
+                // Set the correct request code based on the resource type
+                when (resource) {
+                    PermissionRequest.RESOURCE_VIDEO_CAPTURE -> requestCode = RC_CAMERA
+                    PermissionRequest.RESOURCE_AUDIO_CAPTURE -> requestCode = RC_MICROPHONE
+                    PermissionRequest.RESOURCE_GEOLOCATION -> requestCode = RC_GEOLOCATION
+                }
             }
         }
 
@@ -68,10 +76,11 @@ class PermissionManager(private val activity: Activity) {
             request.grant(requestedResources)
         } else {
             pendingPermissionRequest = request
+            pendingPermissionRequestCode = requestCode
             ActivityCompat.requestPermissions(
                 activity,
                 neededPermissions.toTypedArray(),
-                RC_CAMERA
+                requestCode
             )
         }
     }

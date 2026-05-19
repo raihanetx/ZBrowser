@@ -6,11 +6,11 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import javax.inject.Inject
 
 /**
- * Application class for ZBrowser v3.1.
+ * Application class for ZBrowser v3.2.
  *
  * Initializes:
  * - WebView pool for near-instant tab creation
@@ -44,5 +44,10 @@ class ZBrowserApp : Application() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
             WebView.setDataDirectorySuffix("zbrowser_webview")
         }
+    }
+
+    override fun onTerminate() {
+        appScope.cancel()
+        super.onTerminate()
     }
 }

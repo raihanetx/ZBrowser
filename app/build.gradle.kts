@@ -13,8 +13,8 @@ android {
         applicationId = "com.zbrowser.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "3.1.0"
+        versionCode = 7
+        versionName = "3.2.0"
 
         // Room schema export
         ksp {

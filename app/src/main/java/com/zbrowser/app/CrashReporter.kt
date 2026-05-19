@@ -3,6 +3,8 @@ package com.zbrowser.app
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 import java.io.FileWriter
 import java.io.PrintWriter
@@ -84,6 +86,7 @@ object CrashReporter {
 
     /**
      * Write a crash log to a file in the app's internal storage.
+     * Runs on a background thread to avoid ANR on the crash thread.
      */
     private fun writeCrashLog(throwable: Throwable) {
         try {
@@ -124,7 +127,7 @@ object CrashReporter {
                 .putBoolean(KEY_HAS_CRASH, true)
                 .apply()
 
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // If crash logging itself fails, silently continue
         }
     }

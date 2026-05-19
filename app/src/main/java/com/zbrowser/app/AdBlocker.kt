@@ -30,7 +30,7 @@ class AdBlocker(private val context: Context, private val prefs: SharedPreferenc
          * Only the host is checked against this set, which is fast and
          * avoids false positives on legitimate content.
          */
-        private val AD_HOSTS = HashSet<String>(listOf(
+        val AD_HOSTS = HashSet<String>(listOf(
             // Major ad networks
             "doubleclick.net", "googlesyndication.com", "googleadservices.com",
             "google-analytics.com", "googletagmanager.com",
@@ -53,7 +53,7 @@ class AdBlocker(private val context: Context, private val prefs: SharedPreferenc
          * Pre-compiled regex for common ad-serving URL path patterns.
          * A single regex match is faster than iterating 10+ string .contains() calls.
          */
-        private val AD_PATH_PATTERN = Pattern.compile(
+        val AD_PATH_PATTERN = Pattern.compile(
             """(?:/ads/|/ad/|/adv/|/banner/|/banners/|/adserver/""" +
             """|/advertising/|/advert/|/tracking/|/tracker/|/pixel\.|/beacon\.)""",
             Pattern.CASE_INSENSITIVE
@@ -78,8 +78,6 @@ class AdBlocker(private val context: Context, private val prefs: SharedPreferenc
                 document.head.appendChild(style);
             })();
         """
-
-        private val EMPTY_RESPONSE = ByteArrayInputStream("".toByteArray())
     }
 
     var isEnabled: Boolean
@@ -121,6 +119,8 @@ class AdBlocker(private val context: Context, private val prefs: SharedPreferenc
     }
 
     fun createBlockedResponse(): WebResourceResponse {
-        return WebResourceResponse("text/plain", "utf-8", EMPTY_RESPONSE)
+        // Create a NEW ByteArrayInputStream each time — the stream position
+        // is mutable, so sharing a single instance across threads corrupts data
+        return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream("".toByteArray()))
     }
 }
