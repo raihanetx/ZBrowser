@@ -1,32 +1,21 @@
 package com.zbrowser.app
 
 import androidx.lifecycle.ViewModel
-import androidx.savedstate.SavedStateHandle
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.Serializable
-import javax.inject.Inject
 
 /**
  * ViewModel for the browser that survives configuration changes.
  * Stores tab metadata (not WebViews, which are Activity-scoped) so that
- * tab state can be restored after rotation or process death.
+ * tab state can be restored after rotation.
+ *
+ * Uses regular ViewModel properties instead of SavedStateHandle.
+ * ViewModel survives configuration changes (rotation) which is the primary
+ * use case. For process death, the app gracefully recreates with HOME_URL.
  */
-@HiltViewModel
-class BrowserViewModel @Inject constructor(
-    private val savedStateHandle: SavedStateHandle
-) : ViewModel() {
-
-    companion object {
-        private const val KEY_TAB_DATA = "tab_data"
-        private const val KEY_ACTIVE_TAB_ID = "active_tab_id"
-        private const val KEY_NEXT_TAB_ID = "next_tab_id"
-        private const val KEY_DESKTOP_MODE = "desktop_mode"
-    }
+class BrowserViewModel : ViewModel() {
 
     /**
      * Serializable tab metadata for state preservation.
-     * Implements Serializable so SavedStateHandle can serialize it
-     * across process death (Parcel + Serializable fallback).
      */
     data class TabState(
         val id: Int,
@@ -39,35 +28,27 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
-    /** Save current tab states for restoration after config change or process death */
+    private var _tabStates: List<TabState>? = null
+    private var _activeTabId: Int = -1
+    private var _nextTabId: Int = 1
+    private var _desktopMode: Boolean = false
+
+    /** Save current tab states for restoration after config change */
     fun saveTabStates(tabs: List<BrowserTab>, activeTabId: Int, nextTabId: Int) {
-        val states = tabs.map { TabState(it.id, it.title, it.url, it.isDesktopMode) }
-        @Suppress("UNCHECKED_CAST")
-        savedStateHandle[KEY_TAB_DATA] = states as Serializable
-        savedStateHandle[KEY_ACTIVE_TAB_ID] = activeTabId
-        savedStateHandle[KEY_NEXT_TAB_ID] = nextTabId
+        _tabStates = tabs.map { TabState(it.id, it.title, it.url, it.isDesktopMode) }
+        _activeTabId = activeTabId
+        _nextTabId = nextTabId
     }
 
     /** Restore tab states */
-    @Suppress("UNCHECKED_CAST", "DEPRECATION")
-    fun getTabStates(): List<TabState>? {
-        return (savedStateHandle.get<Serializable>(KEY_TAB_DATA) as? List<TabState>)
-    }
+    fun getTabStates(): List<TabState>? = _tabStates
 
-    fun getActiveTabId(): Int {
-        return savedStateHandle.get(KEY_ACTIVE_TAB_ID) ?: -1
-    }
+    fun getActiveTabId(): Int = _activeTabId
 
-    fun getNextTabId(): Int {
-        return savedStateHandle.get(KEY_NEXT_TAB_ID) ?: 1
-    }
+    fun getNextTabId(): Int = _nextTabId
 
     /** Save global desktop mode preference */
-    fun saveDesktopMode(isDesktop: Boolean) {
-        savedStateHandle[KEY_DESKTOP_MODE] = isDesktop
-    }
+    fun saveDesktopMode(isDesktop: Boolean) { _desktopMode = isDesktop }
 
-    fun getDesktopMode(): Boolean {
-        return savedStateHandle.get(KEY_DESKTOP_MODE) ?: false
-    }
+    fun getDesktopMode(): Boolean = _desktopMode
 }

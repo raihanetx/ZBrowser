@@ -13,8 +13,8 @@ android {
         applicationId = "com.zbrowser.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "4.1.0"
+        versionCode = 10
+        versionName = "4.1.1"
 
         // Room schema export
         ksp {
@@ -93,10 +93,7 @@ dependencies {
     // Lifecycle & ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.7")
     implementation("androidx.activity:activity-ktx:1.9.3")
-    implementation("androidx.savedstate:savedstate:1.2.1")
-    implementation("androidx.savedstate:savedstate-ktx:1.2.1")
 
     // Encrypted SharedPreferences for secure bookmark storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
