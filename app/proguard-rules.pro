@@ -31,3 +31,6 @@
 -keepclassmembers class kotlinx.coroutines.** {
     volatile <fields>;
 }
+
+# L7 FIX: Keep BuildConfig so CrashReporter can access VERSION_NAME
+-keep class com.zbrowser.app.BuildConfig { *; }

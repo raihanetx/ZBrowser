@@ -10,12 +10,15 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Data Access Object for bookmarks.
  * Provides CRUD operations with Flow for reactive UI updates.
+ *
+ * v4.0: insert now returns Unit (URL is primary key, no autoGenerate ID).
+ * OnConflictStrategy.REPLACE now works correctly by URL.
  */
 @Dao
 interface BookmarkDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(bookmark: BookmarkEntity): Long
+    suspend fun insert(bookmark: BookmarkEntity)
 
     @Delete
     suspend fun delete(bookmark: BookmarkEntity)

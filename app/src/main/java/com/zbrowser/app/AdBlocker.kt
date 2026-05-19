@@ -10,10 +10,10 @@ import java.util.regex.Pattern
 /**
  * High-performance ad and tracker blocker.
  *
- * v3.1 OPTIMIZATIONS:
+ * v4.0 OPTIMIZATIONS:
  * - HashSet for O(1) domain lookups (was O(n) linear scan)
  * - Pre-compiled regex for ad-path patterns (was string contains per pattern)
- * - Lazy CSS injection string — allocated once, never re-created
+ * - CSS injection uses proper single-line string concatenation (was JS syntax error)
  * - Host-only check avoids full-URL scanning for most requests
  *
  * Blocks both the request AND hides ad containers via CSS injection
@@ -61,23 +61,25 @@ class AdBlocker(private val context: Context, private val prefs: SharedPreferenc
 
         /**
          * CSS to hide common ad containers — lazily allocated once.
+         *
+         * v4.0 FIX: Replaced broken single-quoted string with newlines
+         * (JS syntax error) with proper single-line string concatenation.
+         * Each JS string literal is on one line with no embedded newlines.
          */
-        const val AD_HIDE_CSS = """
-            (function() {
-                var style = document.createElement('style');
-                style.textContent = '
-                    [id^="google_ads"], [id^="div-gpt-ad"], [class*="ad-container"], '
-                    + '[class*="ad-wrapper"], [class*="ad-banner"], [class*="sponsored"], '
-                    + '[class*="taboola"], [class*="outbrain"], [class*="recommendation"], '
-                    + 'ins.adsbygoogle, div[id^="taboola-"], div[class^="taboola-"], '
-                    + 'iframe[src*="doubleclick"], iframe[src*="googlesyndication"], '
-                    + 'iframe[src*="amazon-adsystem"], iframe[src*="facebook.net/tr"], '
-                    + 'div[data-ad], div[data-ad-slot], div[data-adunit], '
-                    + '[class*="sticky-ad"], [class*="floating-ad"], [id*="push-notification"] '
-                    + '{ display: none !important; height: 0 !important; overflow: hidden !important; }';
-                document.head.appendChild(style);
-            })();
-        """
+        const val AD_HIDE_CSS = "(function(){" +
+            "var s=document.createElement('style');" +
+            "s.textContent=" +
+            "'[id^=\"google_ads\"],[id^=\"div-gpt-ad\"],[class*=\"ad-container\"]," +
+            "[class*=\"ad-wrapper\"],[class*=\"ad-banner\"],[class*=\"sponsored\"]," +
+            "[class*=\"taboola\"],[class*=\"outbrain\"],[class*=\"recommendation\"]," +
+            "ins.adsbygoogle,div[id^=\"taboola-\"],div[class^=\"taboola-\"]," +
+            "iframe[src*=\"doubleclick\"],iframe[src*=\"googlesyndication\"]," +
+            "iframe[src*=\"amazon-adsystem\"],iframe[src*=\"facebook.net/tr\"]," +
+            "div[data-ad],div[data-ad-slot],div[data-adunit]," +
+            "[class*=\"sticky-ad\"],[class*=\"floating-ad\"],[id*=\"push-notification\"]" +
+            "{display:none!important;height:0!important;overflow:hidden!important}';" +
+            "document.head.appendChild(s);" +
+            "})()"
     }
 
     var isEnabled: Boolean

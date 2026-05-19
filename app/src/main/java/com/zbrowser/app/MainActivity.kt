@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * Main browser activity — ZBrowser v3.1 OPTIMIZED FOR MAXIMUM SMOOTHNESS.
+ * Main browser activity — ZBrowser v4.0 OPTIMIZED FOR MAXIMUM SMOOTHNESS.
  *
  * Performance Architecture:
  * - VISIBLE/GONE tab switching: zero layout thrash, zero flicker
@@ -43,8 +43,9 @@ import javax.inject.Inject
  * - Render process crash guard: WebView crash ≠ app crash
  * - Debounced history recording: no Room-write spam
  * - O(1) ad blocker: HashSet lookup for every network request
- * - Low-memory handler: proactive WebView cache trimming
- * - Smooth progress bar animation: animated 0→100 instead of jumps
+ * - Low-memory handler: proactive WebView cache trimming + recovery
+ * - Smooth progress bar animation with race-condition protection
+ * - Memory pressure recovery: ejected tabs auto-recreate their WebView
  */
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
@@ -63,6 +64,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
     private lateinit var permissionManager: PermissionManager
 
     private var mobileUserAgent: String? = null
+    private var backPressedOnce = false
     private var currentWebView: WebView? = null
 
     // === LIFECYCLE ===
@@ -120,21 +122,70 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
     /**
      * Proactive memory trimming — eject WebView caches and background tab
      * WebViews when the OS signals memory pressure.
+     *
+     * v4.0 FIX: Also removes ejected WebViews from the container so that
+     * switchToTab can properly re-add recreated WebViews later.
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+
+        // Before trimming, remove background WebViews from container so
+        // WebViewPool.release() doesn't fail on attached views
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            for (tab in tabManager.tabs) {
+                if (tab.id != tabManager.activeTabId && tab.webView != null) {
+                    tab.webView?.let { wv ->
+                        binding.webViewContainer.removeView(wv)
+                    }
+                }
+            }
+        }
+
         tabManager.onTrimMemory(level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
             WebView.clearCache(false)   // Clear WebView static cache
         }
     }
 
+    // L5 FIX: Back press shows confirmation when WebView can't go back
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && currentWebView?.canGoBack() == true) {
-            currentWebView?.goBack()
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (currentWebView?.canGoBack() == true) {
+                currentWebView?.goBack()
+                return true
+            }
+            // At root of browsing history — confirm exit
+            if (backPressedOnce) {
+                // Second press within 2 seconds — exit
+                finish()
+                return true
+            }
+            backPressedOnce = true
+            Toast.makeText(this, R.string.press_back_again, Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                kotlinx.coroutines.delay(2000)
+                backPressedOnce = false
+            }
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    // M7 FIX: Handle file chooser result for <input type="file">
+    @Deprecated("Deprecated in API 33+ but required for compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == BrowserWebChromeClient.REQUEST_FILE_CHOOSER) {
+            val callback = BrowserWebChromeClient.pendingFilePathCallback
+            if (callback != null) {
+                val result = if (resultCode == RESULT_OK && data != null) {
+                    val uri = data.data
+                    if (uri != null) arrayOf(uri) else null
+                } else null
+                callback.onReceiveValue(result)
+                BrowserWebChromeClient.pendingFilePathCallback = null
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -234,7 +285,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         s.allowContentAccess = false
         s.loadsImagesAutomatically = true
 
-        // PERFORMANCE: Set a large HTTP cache to reduce network round-trips
+        // Use default cache mode — WebView manages HTTP cache size automatically
         s.cacheMode = WebSettings.LOAD_DEFAULT
 
         // Save the mobile UA before overwriting
@@ -286,28 +337,34 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
     /**
      * Smooth progress bar animation — animates from current value to target
      * instead of jumping, eliminating visual jank.
+     *
+     * H4 FIX: Cancel any in-progress animation before starting a new one.
+     * This prevents race conditions when a new page load starts during
+     * the 100→gone fade-out animation.
      */
     private fun animateProgress(targetProgress: Int) {
+        // Cancel any pending animation to prevent race conditions
+        binding.progressBar.animate().cancel()
+
         val current = binding.progressBar.progress
         if (targetProgress == 100) {
             // Animate to 100 then fade out
+            binding.progressBar.progress = 100
             binding.progressBar.animate()
-                .setDuration(150)
+                .alpha(0f)
+                .setDuration(200)
                 .setInterpolator(AccelerateDecelerateInterpolator())
                 .withEndAction {
-                    binding.progressBar.progress = 100
                     binding.progressBar.visibility = View.GONE
                     binding.progressBar.progress = 0
+                    binding.progressBar.alpha = 1f  // Reset alpha for next load
                 }
                 .start()
         } else {
             binding.progressBar.visibility = View.VISIBLE
+            binding.progressBar.alpha = 1f  // Ensure visible and opaque
             // Smooth increment — never jump backward
             if (targetProgress > current) {
-                binding.progressBar.animate()
-                    .setDuration(100)
-                    .setInterpolator(AccelerateDecelerateInterpolator())
-                    .start()
                 binding.progressBar.progress = targetProgress
             }
         }
@@ -333,21 +390,31 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         Toast.makeText(this, R.string.webview_recovered, Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * H2 FIX: Handle new window requests from web content.
+     * Instead of creating a bare WebView with minimal client, we use a temporary
+     * WebView that intercepts the first URL load and creates a proper tab
+     * with all features (ad blocker, popup blocker, download listener, history).
+     *
+     * The temporary WebView is released back to the pool after the URL is captured.
+     */
     private fun handleNewWindow(resultMsg: android.os.Message?) {
-        val newWebView = WebViewPool.acquire(this)
-        newWebView.webViewClient = object : WebViewClient() {
+        val tempWebView = WebViewPool.acquire(this)
+        tempWebView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(wv: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
                 if (SecurityUtils.isUrlSafe(url)) {
+                    // Create a proper tab with all browser features
                     runOnUiThread { addNewTab(url) }
                 }
-                WebViewPool.release(wv!!)
+                // Release the temporary WebView back to pool (detached, no parent)
+                WebViewPool.release(wv!!, removeParent = false)
                 return true
             }
         }
 
         val transport = resultMsg?.obj as? WebView.WebViewTransport
-        transport?.webView = newWebView
+        transport?.webView = tempWebView
         resultMsg?.sendToTarget()
     }
 
@@ -451,6 +518,16 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
     private fun switchToTab(tabId: Int) {
         val tab = tabManager.switchToTab(tabId) ?: return
 
+        // C4 FIX: If this tab's WebView was ejected by onTrimMemory, recreate it
+        if (tab.needsWebViewRecreation || tab.webView == null) {
+            val newWebView = createWebView(tab.isDesktopMode)
+            tab.webView = newWebView
+            tab.needsWebViewRecreation = false
+            binding.webViewContainer.addView(newWebView)
+            newWebView.visibility = View.VISIBLE
+            newWebView.loadUrl(tab.url)
+        }
+
         // Hide ALL WebViews, then show only the active one
         for (t in tabManager.tabs) {
             t.webView?.visibility = if (t.id == tabId) View.VISIBLE else View.GONE
@@ -469,12 +546,14 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         val closedIdx = tabManager.tabs.indexOf(tabManager.getTab(tabId))
         val closedWebView = tabManager.getTab(tabId)?.webView
 
-        val nextTab = tabManager.closeTab(tabId)
-
-        // Remove WebView from container
+        // C3+H1 FIX: Remove WebView from container BEFORE closing tab
+        // (which releases to WebViewPool). This ensures WebView is detached
+        // from parent before pool tries to destroy or recycle it.
         closedWebView?.let { wv ->
             binding.webViewContainer.removeView(wv)
         }
+
+        val nextTab = tabManager.closeTab(tabId)
 
         if (nextTab == null) {
             binding.tabLayout.removeAllTabs()
@@ -490,6 +569,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         updateTabCount()
     }
 
+    // L2 FIX: Added confirmation dialog for "Close All" tabs
     private fun showTabSwitcher() {
         if (tabManager.tabs.isEmpty()) return
         MaterialAlertDialogBuilder(this)
@@ -498,12 +578,19 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
                 switchToTab(tabManager.tabs[w].id)
             }
             .setNeutralButton(R.string.close_all) { _, _ ->
-                // Remove all WebViews from container
-                binding.webViewContainer.removeAllViews()
-                tabManager.closeAllTabs()
-                binding.tabLayout.removeAllTabs()
-                currentWebView = null
-                addNewTab(TabManager.HOME_URL)
+                // Confirm before closing all tabs
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.close_all)
+                    .setMessage(R.string.close_all_confirmation)
+                    .setPositiveButton(R.string.close_all) { _, _ ->
+                        binding.webViewContainer.removeAllViews()
+                        tabManager.closeAllTabs()
+                        binding.tabLayout.removeAllTabs()
+                        currentWebView = null
+                        addNewTab(TabManager.HOME_URL)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
             }
             .setPositiveButton(R.string.new_tab_button) { _, _ -> addNewTab(TabManager.HOME_URL) }
             .show()
@@ -629,6 +716,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         }
     }
 
+    // M4 FIX: Show title + URL in bookmarks dialog for disambiguation
     private fun showBookmarks() {
         lifecycleScope.launch {
             val bookmarks = withContext(Dispatchers.IO) { bookmarkDao.getAllBookmarksOnce() }
@@ -636,9 +724,12 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
                 Toast.makeText(this@MainActivity, R.string.no_bookmarks, Toast.LENGTH_SHORT).show()
                 return@launch
             }
+            val displayItems = bookmarks.map { bm ->
+                if (bm.title != bm.url) "${bm.title}\n${bm.url}" else bm.url
+            }.toTypedArray()
             MaterialAlertDialogBuilder(this@MainActivity)
                 .setTitle(R.string.bookmarks)
-                .setItems(bookmarks.map { it.title }.toTypedArray()) { _, w ->
+                .setItems(displayItems) { _, w ->
                     loadUrl(bookmarks[w].url)
                 }
                 .show()
@@ -647,6 +738,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
 
     // === HISTORY (Room DB) ===
 
+    // M4 FIX: Show title + URL in history dialog for disambiguation
     private fun showFullHistory() {
         lifecycleScope.launch {
             val history = withContext(Dispatchers.IO) { historyDao.getRecentHistory(100) }
@@ -654,9 +746,12 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
                 Toast.makeText(this@MainActivity, R.string.no_history, Toast.LENGTH_SHORT).show()
                 return@launch
             }
+            val displayItems = history.map { h ->
+                if (h.title != h.url) "${h.title}\n${h.url}" else h.url
+            }.toTypedArray()
             MaterialAlertDialogBuilder(this@MainActivity)
                 .setTitle(R.string.history)
-                .setItems(history.map { it.title }.toTypedArray()) { _, w ->
+                .setItems(displayItems) { _, w ->
                     loadUrl(history[w].url)
                 }
                 .show()
@@ -855,6 +950,12 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
                 binding.tabLayout.addTab(binding.tabLayout.newTab().apply { text = state.title }, false)
                 webView.loadUrl(state.url)
             }
+        }
+
+        // H3 FIX: Restore nextTabId from saved state to prevent ID collisions
+        val savedNextTabId = viewModel.getNextTabId()
+        if (savedNextTabId > tabManager.nextTabId) {
+            tabManager.setNextTabId(savedNextTabId)
         }
 
         val activeId = viewModel.getActiveTabId()

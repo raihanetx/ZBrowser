@@ -118,24 +118,33 @@ jobs:
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v3.0.${{ github.run_number }}
-        name: ZBrowser v3.0.${{ github.run_number }}
+        # M8 FIX: Version tag now matches app version (4.0)
+        tag_name: v4.0.${{ github.run_number }}
+        name: ZBrowser v4.0.${{ github.run_number }}
         body: |
-          ## ZBrowser v3.0 - Full-Feature Android Browser
+          ## ZBrowser v4.0 - Production-Ready Android Browser
 
           Built from commit: ${{ github.sha }}
 
-          ### v3.0 Features
-          - **Ad Blocker**: Blocks ads, trackers, and analytics with CSS hiding
-          - **Popup Blocker**: Blocks window.open() spam
-          - **Download Manager**: Download files with system notifications
-          - **Room Database**: Structured bookmarks & history storage
-          - **Hilt DI**: Professional dependency injection
-          - **Kotlin Coroutines**: Async database operations
-          - **Crash Reporter**: Local crash log capture & sharing
-          - **Runtime Permissions**: Camera, mic, location for web content
-          - **Multi-Window**: Split-screen and freeform window support
-          - **Unit Tests**: SecurityUtils, TabManager, AdBlocker test coverage
+          ### v4.0 Bug Fixes & Improvements
+          - **CRITICAL**: Fixed WebViewPool.init() compilation error
+          - **CRITICAL**: Fixed AdBlocker CSS injection JavaScript syntax error
+          - **CRITICAL**: Fixed WebViewPool release/destroy order (memory leak)
+          - **CRITICAL**: Fixed onTrimMemory blank screen after memory pressure
+          - **HIGH**: Fixed closeTab order-of-operations bug
+          - **HIGH**: Fixed handleNewWindow bare WebView (now uses full features)
+          - **HIGH**: Fixed restoreTabs nextTabId collision
+          - **HIGH**: Fixed animateProgress race condition
+          - **HIGH**: Removed fallbackToDestructiveMigration (data loss prevention)
+          - **HIGH**: CrashReporter init now runs before WebViewPool
+          - **MEDIUM**: PermissionManager supports concurrent requests
+          - **MEDIUM**: Bookmarks/History dialogs show URL for disambiguation
+          - **MEDIUM**: Added file upload support (<input type="file">)
+          - **MEDIUM**: Fixed BookmarkEntity primary key (URL-based, no duplicate issue)
+          - **MEDIUM**: CrashReporter writes on separate thread
+          - **LOW**: Close All tabs confirmation dialog
+          - **LOW**: Exit confirmation on back press
+          - **LOW**: Added proguard keep for BuildConfig
 
           ### Downloads
           - **ZBrowser-debug.apk** - Debug build for testing

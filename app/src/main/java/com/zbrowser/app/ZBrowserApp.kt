@@ -1,7 +1,6 @@
 package com.zbrowser.app
 
 import android.app.Application
-import android.webkit.WebView
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -10,11 +9,11 @@ import kotlinx.coroutines.cancel
 import javax.inject.Inject
 
 /**
- * Application class for ZBrowser v3.2.
+ * Application class for ZBrowser v4.0.
  *
  * Initializes:
- * - WebView pool for near-instant tab creation
- * - Crash reporting (local file-based)
+ * - Crash reporter (BEFORE WebView pool, so crashes during init are caught)
+ * - WebView pool for near-instant tab creation (includes data directory suffix)
  * - BookmarkManager migration from legacy EncryptedSharedPreferences
  *
  * Uses @HiltAndroidApp for proper Hilt initialization.
@@ -29,20 +28,15 @@ class ZBrowserApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Initialize WebView pool — seed one WebView for instant first tab
-        WebViewPool.init(this)
-
-        // Initialize crash reporting
+        // H6 FIX: Initialize crash reporter FIRST so it catches any subsequent init crashes
         CrashReporter.init(this)
+
+        // Initialize WebView pool — sets data directory suffix for Android P+ internally
+        WebViewPool.init(this)
 
         // Migrate legacy bookmarks to Room in background (non-blocking)
         appScope.launch(Dispatchers.IO) {
             bookmarkManager.migrateIfNeeded()
-        }
-
-        // Set WebView data directory for Android P+ to prevent disk IO on main thread
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            WebView.setDataDirectorySuffix("zbrowser_webview")
         }
     }
 

@@ -25,11 +25,12 @@ import kotlinx.coroutines.launch
 /**
  * Custom WebViewClient optimized for maximum smoothness.
  *
- * v3.2 FIXES:
+ * v4.0 FIXES:
  * - onRenderProcessGone: properly removes WebView from parent before destroy
  * - Debounced history recording (500ms) prevents Room write spam
  * - Ad blocker uses O(1) HashSet lookup
  * - Minimal work in shouldOverrideUrlLoading
+ * - CSS injection uses proper single-line strings (no JS syntax error)
  */
 class BrowserWebViewClient(
     private val context: Context,

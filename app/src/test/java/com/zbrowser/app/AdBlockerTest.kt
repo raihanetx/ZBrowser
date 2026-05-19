@@ -71,7 +71,8 @@ class AdBlockerTest {
 
     @Test
     fun adHideCss_containsDisplayNone() {
-        assertTrue(AdBlocker.AD_HIDE_CSS.contains("display: none"))
+        // v4.0: CSS uses minified format "display:none!important"
+        assertTrue(AdBlocker.AD_HIDE_CSS.contains("display:none"))
     }
 
     @Test

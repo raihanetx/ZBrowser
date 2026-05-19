@@ -7,13 +7,13 @@ import javax.inject.Singleton
 /**
  * Manages browser tab lifecycle with maximum smoothness.
  *
- * v3.1 OPTIMIZATIONS:
- * - Tab switching uses visibility (VISIBLE/GONE) instead of remove/add views,
- *   eliminating layout thrashing and visual flicker
- * - Background tabs are paused (onPause) to save CPU/GPU
- * - Active tab is resumed (onResume) for smooth rendering
- * - WebViewPool is used for acquire/release instead of direct destroy
- * - Memory-aware: onTrimMemory can eject non-active tabs
+ * v4.0 FIXES:
+ * - C4 FIX: onTrimMemory now preserves tab URL/title for WebView recreation.
+ *   When a background tab's WebView is ejected, the tab retains its URL
+ *   so switchToTab can recreate the WebView on demand.
+ * - WebViewPool.release() now handles parent detachment internally,
+ *   so callers don't need to remove from container before calling closeTab.
+ * - Added flag for WebView recreation after memory pressure.
  */
 @Singleton
 class TabManager @Inject constructor() {
@@ -32,6 +32,13 @@ class TabManager @Inject constructor() {
         const val HOME_URL = "https://www.google.com"
     }
 
+    /**
+     * Set the next tab ID — used during state restoration to prevent ID collisions.
+     */
+    fun setNextTabId(nextId: Int) {
+        _nextTabId = nextId
+    }
+
     fun addTab(webView: WebView, url: String = HOME_URL, isDesktopMode: Boolean = false): BrowserTab? {
         if (_tabs.size >= MAX_TABS) return null
 
@@ -47,6 +54,11 @@ class TabManager @Inject constructor() {
 
     /**
      * Switch to a tab — pauses the previously active tab and resumes the new one.
+     *
+     * C4 FIX: If the target tab's WebView was ejected by onTrimMemory (webView == null),
+     * this method returns the tab but does NOT attempt to use the null WebView.
+     * The caller (MainActivity.switchToTab) must check for null WebView and recreate it.
+     *
      * The caller is responsible for setting the WebView visibility (VISIBLE/GONE).
      */
     fun switchToTab(tabId: Int): BrowserTab? {
@@ -62,7 +74,7 @@ class TabManager @Inject constructor() {
 
         _activeTabId = tabId
 
-        // Resume the new active tab
+        // Resume the new active tab (only if WebView wasn't ejected by memory pressure)
         tab.webView?.onResume()
 
         return tab
@@ -72,8 +84,8 @@ class TabManager @Inject constructor() {
         val tab = _tabs.find { it.id == tabId } ?: return null
         val idx = _tabs.indexOf(tab)
 
-        // Release WebView to pool instead of destroying immediately
-        tab.webView?.let { WebViewPool.release(it) }
+        // Release WebView to pool — WebViewPool.release() handles parent detachment
+        tab.webView?.let { WebViewPool.release(it, removeParent = true) }
         _tabs.removeAt(idx)
 
         if (_tabs.isEmpty()) return null
@@ -83,7 +95,7 @@ class TabManager @Inject constructor() {
 
     fun closeAllTabs() {
         _tabs.forEach { tab ->
-            tab.webView?.let { WebViewPool.release(it) }
+            tab.webView?.let { WebViewPool.release(it, removeParent = true) }
         }
         _tabs.clear()
         _activeTabId = -1
@@ -98,15 +110,21 @@ class TabManager @Inject constructor() {
         _tabs.forEach { tab ->
             tab.webView?.let { wv ->
                 wv.onPause()
-                WebViewPool.release(wv)
+                WebViewPool.release(wv, removeParent = true)
             }
         }
         _tabs.clear()
     }
 
     /**
-     * Called when the OS requests memory trimming.
-     * Ejects non-active tab WebViews from memory.
+     * C4 FIX: Called when the OS requests memory trimming.
+     *
+     * When background tab WebViews are ejected, the tab retains its URL and title
+     * so that when the user switches back to that tab, the WebView can be recreated
+     * and the page reloaded. This prevents the blank-screen issue.
+     *
+     * The BrowserTab.needsWebViewRecreation flag is set when a WebView is ejected,
+     * and cleared when it's recreated by the Activity.
      */
     fun onTrimMemory(level: Int) {
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
@@ -119,10 +137,12 @@ class TabManager @Inject constructor() {
         }
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
             // Destroy all background tabs' WebViews aggressively
+            // C4 FIX: Set needsWebViewRecreation flag so Activity can recreate on switch
             _tabs.filter { it.id != _activeTabId }.forEach { tab ->
                 tab.webView?.let { wv ->
-                    WebViewPool.release(wv)
+                    WebViewPool.release(wv, removeParent = true)
                     tab.webView = null
+                    tab.needsWebViewRecreation = true
                 }
             }
         }

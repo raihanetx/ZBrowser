@@ -16,6 +16,9 @@ import androidx.core.content.ContextCompat
  * NOTE: Not provided via Hilt @Singleton — instead created directly in
  * MainActivity because it needs an Activity reference. Hilt @Singleton
  * cannot inject Activity-scoped objects.
+ *
+ * v4.0 FIX: M3 — Supports multiple concurrent permission requests using a map
+ * of requestCode → pending request, instead of a single pending field.
  */
 class PermissionManager(private val activity: Activity) {
 
@@ -32,10 +35,10 @@ class PermissionManager(private val activity: Activity) {
         )
     }
 
-    private var pendingGeoCallback: GeolocationPermissions.Callback? = null
-    private var pendingGeoOrigin: String? = null
-    private var pendingPermissionRequest: PermissionRequest? = null
-    private var pendingPermissionRequestCode: Int = RC_CAMERA
+    // M3 FIX: Use maps to support multiple concurrent permission requests
+    private val pendingGeoCallbacks = mutableMapOf<Int, Pair<GeolocationPermissions.Callback, String>>()
+    private val pendingPermissionRequests = mutableMapOf<Int, PermissionRequest>()
+    private var nextRequestCode = RC_FILE_ACCESS + 1
 
     fun onGeolocationPermissionsShowPrompt(
         origin: String,
@@ -44,12 +47,12 @@ class PermissionManager(private val activity: Activity) {
         if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
             callback.invoke(origin, true, false)
         } else {
-            pendingGeoCallback = callback
-            pendingGeoOrigin = origin
+            val requestCode = RC_GEOLOCATION
+            pendingGeoCallbacks[requestCode] = Pair(callback, origin)
             ActivityCompat.requestPermissions(
                 activity,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                RC_GEOLOCATION
+                requestCode
             )
         }
     }
@@ -75,12 +78,17 @@ class PermissionManager(private val activity: Activity) {
         if (neededPermissions.isEmpty()) {
             request.grant(requestedResources)
         } else {
-            pendingPermissionRequest = request
-            pendingPermissionRequestCode = requestCode
+            // M3 FIX: Use unique request codes for concurrent requests
+            val uniqueCode = if (pendingPermissionRequests.containsKey(requestCode)) {
+                nextRequestCode++
+            } else {
+                requestCode
+            }
+            pendingPermissionRequests[uniqueCode] = request
             ActivityCompat.requestPermissions(
                 activity,
                 neededPermissions.toTypedArray(),
-                requestCode
+                uniqueCode
             )
         }
     }
@@ -95,21 +103,31 @@ class PermissionManager(private val activity: Activity) {
 
         when (requestCode) {
             RC_GEOLOCATION -> {
-                pendingGeoCallback?.invoke(
-                    pendingGeoOrigin ?: "",
-                    allGranted,
-                    false
-                )
-                pendingGeoCallback = null
-                pendingGeoOrigin = null
+                pendingGeoCallbacks.remove(requestCode)?.let { (callback, origin) ->
+                    callback.invoke(origin, allGranted, false)
+                }
             }
             RC_CAMERA, RC_MICROPHONE -> {
-                if (allGranted) {
-                    pendingPermissionRequest?.grant(pendingPermissionRequest?.resources)
-                } else {
-                    pendingPermissionRequest?.deny()
+                pendingPermissionRequests.remove(requestCode)?.let { request ->
+                    if (allGranted) {
+                        request.grant(request.resources)
+                    } else {
+                        request.deny()
+                    }
                 }
-                pendingPermissionRequest = null
+            }
+            else -> {
+                // M3 FIX: Handle dynamically generated request codes
+                pendingPermissionRequests.remove(requestCode)?.let { request ->
+                    if (allGranted) {
+                        request.grant(request.resources)
+                    } else {
+                        request.deny()
+                    }
+                }
+                pendingGeoCallbacks.remove(requestCode)?.let { (callback, origin) ->
+                    callback.invoke(origin, allGranted, false)
+                }
             }
         }
     }
