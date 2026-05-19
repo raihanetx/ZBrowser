@@ -12,17 +12,19 @@ import androidx.core.content.ContextCompat
  * Manages runtime permissions for the browser.
  * Handles geolocation, camera, microphone, and other web content permissions.
  * Shows user-friendly prompts before granting permissions to web pages.
+ *
+ * NOTE: Not provided via Hilt @Singleton — instead created directly in
+ * MainActivity because it needs an Activity reference. Hilt @Singleton
+ * cannot inject Activity-scoped objects.
  */
 class PermissionManager(private val activity: Activity) {
 
     companion object {
-        // Request codes
         const val RC_GEOLOCATION = 1001
         const val RC_CAMERA = 1002
         const val RC_MICROPHONE = 1003
         const val RC_FILE_ACCESS = 1004
 
-        /** Maps WebKit PermissionRequest resources to Android permissions */
         private val RESOURCE_TO_PERMISSION = mapOf(
             PermissionRequest.RESOURCE_VIDEO_CAPTURE to Manifest.permission.CAMERA,
             PermissionRequest.RESOURCE_AUDIO_CAPTURE to Manifest.permission.RECORD_AUDIO,
@@ -30,15 +32,10 @@ class PermissionManager(private val activity: Activity) {
         )
     }
 
-    // Pending permission callbacks
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
     private var pendingGeoOrigin: String? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    /**
-     * Handle a geolocation permission request from web content.
-     * Checks if permission is already granted, otherwise requests it.
-     */
     fun onGeolocationPermissionsShowPrompt(
         origin: String,
         callback: GeolocationPermissions.Callback
@@ -56,9 +53,6 @@ class PermissionManager(private val activity: Activity) {
         }
     }
 
-    /**
-     * Handle a WebKit PermissionRequest (camera, microphone, etc.).
-     */
     fun onPermissionRequest(request: PermissionRequest) {
         val requestedResources = request.resources
         val neededPermissions = mutableListOf<String>()
@@ -71,23 +65,17 @@ class PermissionManager(private val activity: Activity) {
         }
 
         if (neededPermissions.isEmpty()) {
-            // All permissions already granted
             request.grant(requestedResources)
         } else {
-            // Save the request and ask the user
             pendingPermissionRequest = request
             ActivityCompat.requestPermissions(
                 activity,
                 neededPermissions.toTypedArray(),
-                RC_CAMERA  // Use first matching code
+                RC_CAMERA
             )
         }
     }
 
-    /**
-     * Handle the result of a permission request.
-     * Must be called from Activity.onRequestPermissionsResult.
-     */
     fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -101,7 +89,7 @@ class PermissionManager(private val activity: Activity) {
                 pendingGeoCallback?.invoke(
                     pendingGeoOrigin ?: "",
                     allGranted,
-                    false  // Don't remember
+                    false
                 )
                 pendingGeoCallback = null
                 pendingGeoOrigin = null
@@ -117,9 +105,6 @@ class PermissionManager(private val activity: Activity) {
         }
     }
 
-    /**
-     * Check if a permission is already granted.
-     */
     private fun hasPermission(permission: String): Boolean {
         return ContextCompat.checkSelfPermission(activity, permission) ==
                 PackageManager.PERMISSION_GRANTED

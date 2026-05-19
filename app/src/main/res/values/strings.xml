@@ -38,7 +38,7 @@
     <string name="clear_button">Clear</string>
     <string name="cleared">Browsing data cleared</string>
     <string name="about_zbrowser">About ZBrowser</string>
-    <string name="about_message">ZBrowser v3.0\n\nA secure, feature-rich Android browser.\n\nFeatures: Multi-tab, Desktop mode, Ad Blocker, Popup Blocker, Download Manager, Encrypted Bookmarks, Find in page, Share, Crash Reporting</string>
+    <string name="about_message">ZBrowser v3.1\n\nA secure, fast, and smooth Android browser.\n\nPerformance: Hardware-accelerated WebView, O(1) ad blocker, WebView recycling pool, VISIBLE/GONE tab switching, debounced history, render crash guard, memory-aware trimming\n\nFeatures: Multi-tab, Desktop mode, Ad Blocker, Popup Blocker, Download Manager, Room Database, Find in page, Share, Crash Reporting, Runtime Permissions</string>
     <string name="ok">OK</string>
     <string name="tab_limit_reached">Maximum tab limit reached</string>
     <string name="cannot_open_scheme">Cannot open: %s</string>

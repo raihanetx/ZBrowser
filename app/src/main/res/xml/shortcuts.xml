@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_tab"
+        android:enabled="true"
+        android:icon="@drawable/ic_add"
+        android:shortcutShortLabel="@string/new_tab"
+        android:shortcutLongLabel="@string/new_tab_button">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.zbrowser.app"
+            android:targetClass="com.zbrowser.app.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -5,7 +5,8 @@ import android.webkit.WebView
 /**
  * Represents a single browser tab.
  * Holds a direct reference to its WebView, eliminating fragile index-based coupling.
- * The WebView is nullable to support state preservation during tab lifecycle transitions.
+ * The WebView is nullable to support state preservation during tab lifecycle transitions
+ * and aggressive memory trimming (WebViewPool release).
  */
 data class BrowserTab(
     val id: Int,

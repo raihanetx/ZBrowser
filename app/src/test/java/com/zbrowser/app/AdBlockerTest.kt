@@ -1,58 +1,82 @@
 package com.zbrowser.app
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit tests for AdBlocker.
- * Tests domain matching, URL blocking logic, and CSS injection.
+ * Unit tests for AdBlocker (v3.1 — HashSet-based O(1) lookup).
+ * Tests domain matching, host set contents, path pattern regex, and CSS injection.
  */
 class AdBlockerTest {
 
-    // Test the domain matching logic directly
-    // (AdBlocker needs Context for SharedPreferences, so we test the matching patterns)
-
     @Test
-    fun adDomains_containsDoubleclick() {
-        assertTrue(com.zbrowser.app.AdBlocker.AD_DOMAINS.contains("doubleclick.net"))
+    fun adHosts_containsDoubleclick() {
+        assertTrue(AdBlocker.AD_HOSTS.contains("doubleclick.net"))
     }
 
     @Test
-    fun adDomains_containsGoogleAnalytics() {
-        assertTrue(com.zbrowser.app.AdBlocker.AD_BLOCKER_ENABLED)
-        assertTrue(com.zbrowser.app.AdBlocker.AD_DOMAINS.contains("google-analytics.com"))
+    fun adHosts_containsGoogleAnalytics() {
+        assertTrue(AdBlocker.AD_HOSTS.contains("google-analytics.com"))
     }
 
     @Test
-    fun adDomains_containsFacebookTracking() {
-        assertTrue(com.zbrowser.app.AdBlocker.AD_DOMAINS.contains("facebook.net/tr"))
+    fun adHosts_containsTaboola() {
+        assertTrue(AdBlocker.AD_HOSTS.contains("taboola.com"))
     }
 
     @Test
-    fun adDomains_containsAdPaths() {
-        assertTrue(com.zbrowser.app.AdBlocker.AD_DOMAINS.contains("/ads/"))
-        assertTrue(com.zbrowser.app.AdBlocker.AD_DOMAINS.contains("/tracking/"))
+    fun adHosts_containsCriteo() {
+        assertTrue(AdBlocker.AD_HOSTS.contains("criteo.com"))
     }
 
     @Test
-    fun adDomains_doesNotContainGoogleSearch() {
-        assertFalse(com.zbrowser.app.AdBlocker.AD_DOMAINS.contains("google.com"))
+    fun adHosts_doesNotContainGoogleSearch() {
+        assertFalse(AdBlocker.AD_HOSTS.contains("google.com"))
     }
 
     @Test
-    fun adDomains_doesNotContainGithub() {
-        assertFalse(com.zbrowser.app.AdBlocker.AD_DOMAINS.contains("github.com"))
+    fun adHosts_doesNotContainGithub() {
+        assertFalse(AdBlocker.AD_HOSTS.contains("github.com"))
+    }
+
+    @Test
+    fun adPathPattern_matchesAdPath() {
+        val matcher = AdBlocker.AD_PATH_PATTERN.matcher("/ads/banner.js")
+        assertTrue(matcher.find())
+    }
+
+    @Test
+    fun adPathPattern_matchesTrackingPath() {
+        val matcher = AdBlocker.AD_PATH_PATTERN.matcher("/tracking/pixel.gif")
+        assertTrue(matcher.find())
+    }
+
+    @Test
+    fun adPathPattern_matchesBeaconPath() {
+        val matcher = AdBlocker.AD_PATH_PATTERN.matcher("/beacon.gif")
+        assertTrue(matcher.find())
+    }
+
+    @Test
+    fun adPathPattern_doesNotMatchNormalPath() {
+        val matcher = AdBlocker.AD_PATH_PATTERN.matcher("/articles/2024/tech-news")
+        assertFalse(matcher.find())
     }
 
     @Test
     fun adHideCss_isNotBlank() {
-        assertTrue(com.zbrowser.app.AdBlocker.AD_HIDE_CSS.isNotBlank())
+        assertTrue(AdBlocker.AD_HIDE_CSS.isNotBlank())
     }
 
     @Test
     fun adHideCss_containsDisplayNone() {
-        assertTrue(com.zbrowser.app.AdBlocker.AD_HIDE_CSS.contains("display: none"))
+        assertTrue(AdBlocker.AD_HIDE_CSS.contains("display: none"))
+    }
+
+    @Test
+    fun adHosts_isHashSet() {
+        // Verify it's a HashSet for O(1) lookups
+        assertTrue(AdBlocker.AD_HOSTS is java.util.HashSet)
     }
 }

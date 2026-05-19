@@ -4,18 +4,15 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.preference.PreferenceManager
 import androidx.room.Room
+import com.zbrowser.app.AdBlocker
 import com.zbrowser.app.BookmarkManager
+import com.zbrowser.app.DownloadManagerHelper
 import com.zbrowser.app.LegacyBookmarks
-import com.zbrowser.app.ZBrowserApp
+import com.zbrowser.app.PopupBlocker
+import com.zbrowser.app.TabManager
 import com.zbrowser.app.data.BookmarkDao
 import com.zbrowser.app.data.HistoryDao
 import com.zbrowser.app.data.ZBrowserDatabase
-import com.zbrowser.app.AdBlocker
-import com.zbrowser.app.DownloadManagerHelper
-import com.zbrowser.app.PermissionManager
-import com.zbrowser.app.PopupBlocker
-import com.zbrowser.app.TabManager
-import com.zbrowser.app.SecurityUtils
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.Module
@@ -30,6 +27,9 @@ import javax.inject.Singleton
 
 /**
  * Hilt module that provides singleton dependencies for the entire app.
+ *
+ * NOTE: PermissionManager is NOT provided here because it requires an Activity
+ * reference and cannot be a @Singleton. It is created directly in MainActivity.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -93,8 +93,11 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePermissionManager(activity: android.app.Activity): PermissionManager {
-        return PermissionManager(activity)
+    fun provideBookmarkManager(
+        bookmarkDao: BookmarkDao,
+        @LegacyBookmarks legacyPrefs: SharedPreferences
+    ): BookmarkManager {
+        return BookmarkManager(bookmarkDao, legacyPrefs)
     }
 
     @Provides
