@@ -11,14 +11,16 @@ android {
         applicationId = "com.zbrowser.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "2.0.0"
+    }
+
+    buildFeatures {
+        viewBinding = true
     }
 
     signingConfigs {
         create("release") {
-            // These values come from GitHub Secrets in CI
-            // For local builds, use the keystore file directly
             val ksFile = System.getenv("KEYSTORE_FILE")
             val ksPassword = System.getenv("KEYSTORE_PASSWORD")
             val ksAlias = System.getenv("KEY_ALIAS")
@@ -68,4 +70,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 }

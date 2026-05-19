@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Default: HTTPS only, block cleartext -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Allow Google search over HTTP as fallback (some regions) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">google.com</domain>
+        <domain includeSubdomains="true">google.com.bd</domain>
+        <domain includeSubdomains="true">www.google.com</domain>
+    </domain-config>
+</network-security-config>
