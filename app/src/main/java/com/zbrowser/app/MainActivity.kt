@@ -18,35 +18,49 @@ import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
+import com.zbrowser.app.data.BookmarkDao
+import com.zbrowser.app.data.BookmarkEntity
+import com.zbrowser.app.data.HistoryDao
+import com.zbrowser.app.data.HistoryEntity
 import com.zbrowser.app.databinding.ActivityMainBinding
+import com.zbrowser.app.di.AppModule
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 /**
- * Main browser activity — fully refactored from 638-line God Object into clean architecture.
+ * Main browser activity — ZBrowser v3.0 with all 10 features integrated.
  *
  * Architecture:
- * - BrowserViewModel: state preservation across config changes
- * - TabManager: tab/WebView lifecycle with direct references (no fragile index coupling)
- * - BookmarkManager: encrypted bookmark storage (EncryptedSharedPreferences)
- * - BrowserWebViewClient: URL interception, security, XSS-safe error pages
- * - BrowserWebChromeClient: progress updates, new window handling
- * - SecurityUtils: HTML escaping, URL validation, intent URL sanitization
- *
- * Fixes applied (22 total from expert review):
- * CRITICAL: XSS in error page, usesCleartextTraffic=false, intent:// scheme blocked
- * HIGH: God Object refactored, direct WebView refs, state preservation, encrypted bookmarks,
- *        URL validation, string extraction, ViewBinding
- * MEDIUM: Single desktop mode source of truth, dynamic SSL icon, visible TabLayout,
- *          bookmark management UI, tab limit, resource shrinking, CI linting
- * LOW: AtomicInteger removed, updated UA string (Chrome 131), tight ProGuard rules
+ * - Hilt DI: dependency injection for all managers
+ * - Room DB: bookmarks & history persistence
+ * - Coroutines: async database operations
+ * - Ad Blocker: request interception + CSS injection
+ * - Popup Blocker: window.open() blocking
+ * - Download Manager: system DownloadManager integration
+ * - Crash Reporter: local crash log capture
+ * - Permission Manager: runtime geolocation/camera/mic
+ * - Multi-Window: resizeableActivity + configChanges
  */
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
 
     private lateinit var binding: ActivityMainBinding
     private val viewModel: BrowserViewModel by viewModels()
-    private lateinit var tabManager: TabManager
-    private lateinit var bookmarkManager: BookmarkManager
+
+    @Inject lateinit var tabManager: TabManager
+    @Inject lateinit var adBlocker: AdBlocker
+    @Inject lateinit var popupBlocker: PopupBlocker
+    @Inject lateinit var downloadManagerHelper: DownloadManagerHelper
+    @Inject lateinit var permissionManager: PermissionManager
+    @Inject lateinit var bookmarkDao: BookmarkDao
+    @Inject lateinit var historyDao: HistoryDao
+
     private var mobileUserAgent: String? = null
     private var currentWebView: WebView? = null
 
@@ -58,14 +72,14 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        tabManager = TabManager()
-        bookmarkManager = BookmarkManager(this)
-
         setupToolbar()
         setupUrlBar()
         setupBottomBar()
         setupSwipeRefresh()
         setupTabLayout()
+
+        // Check for crash logs from previous session
+        checkForCrash()
 
         // Restore state or create first tab
         if (savedInstanceState != null) {
@@ -90,7 +104,6 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
     override fun onPause() {
         super.onPause()
         currentWebView?.onPause()
-        // Save state for preservation across config changes
         viewModel.saveTabStates(tabManager.tabs, tabManager.activeTabId, tabManager.nextTabId)
     }
 
@@ -105,6 +118,18 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    /**
+     * FEATURE 10: Forward permission results to PermissionManager.
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionManager.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     // === SETUP ===
@@ -173,44 +198,53 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         s.javaScriptCanOpenWindowsAutomatically = true
         s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         s.cacheMode = WebSettings.LOAD_DEFAULT
-
-        // Security: Disable file access from web content
         s.allowFileAccess = false
         s.allowContentAccess = false
         s.loadsImagesAutomatically = true
 
-        // Cache the default mobile UA from the first WebView
         if (mobileUserAgent == null) {
             mobileUserAgent = s.userAgentString
         }
 
         BrowserWebViewClient.applyModeSettings(s, desktopMode, mobileUserAgent)
 
-        // WebViewClient with context and tab lookup
-        val wvClient = BrowserWebViewClient(this) { webView ->
-            tabManager.getTabForWebView(webView)
-        }
+        // FEATURE 1: Apply popup blocker settings
+        popupBlocker.applyToWebView(webView)
+
+        // WebViewClient with all features
+        val wvClient = BrowserWebViewClient(
+            context = this,
+            tabLookup = { webView -> tabManager.getTabForWebView(webView) },
+            adBlocker = adBlocker,
+            popupBlocker = popupBlocker,
+            historyDao = historyDao,
+            appScope = lifecycleScope
+        )
         wvClient.callback = this
         webView.webViewClient = wvClient
 
-        // WebChromeClient with functional callbacks
+        // WebChromeClient with popup blocker, permissions, and download support
         webView.webChromeClient = BrowserWebChromeClient(
             onProgressChanged = { newProgress ->
                 binding.progressBar.progress = newProgress
                 if (newProgress == 100) binding.progressBar.visibility = View.GONE
             },
-            onNewWindowRequested = { resultMsg ->
-                handleNewWindow(resultMsg)
+            onNewWindowRequested = { resultMsg -> handleNewWindow(resultMsg) },
+            popupBlocker = popupBlocker,
+            permissionManager = permissionManager,
+            onPopupBlocked = {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, R.string.popup_blocked_toast, Toast.LENGTH_SHORT).show()
+                }
             }
         )
+
+        // FEATURE 3: Download Manager - set download listener
+        webView.setDownloadListener(downloadManagerHelper.webViewDownloadListener)
 
         return webView
     }
 
-    /**
-     * Handle new window requests (target="_blank" links).
-     * Creates a temporary WebView to intercept the URL, validates it, then opens in new tab.
-     */
     private fun handleNewWindow(resultMsg: android.os.Message?) {
         val newWebView = WebView(this)
         newWebView.webViewClient = object : WebViewClient() {
@@ -283,6 +317,10 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
             .show()
     }
 
+    override fun onPopupBlocked() {
+        Toast.makeText(this, R.string.popup_blocked_toast, Toast.LENGTH_SHORT).show()
+    }
+
     // === TABS ===
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -311,6 +349,7 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
             binding.webViewContainer.addView(wv)
             currentWebView = wv
             BrowserWebViewClient.applyModeSettings(wv.settings, tab.isDesktopMode, mobileUserAgent)
+            popupBlocker.applyToWebView(wv)
         }
 
         binding.urlBar.setText(tab.url)
@@ -374,9 +413,6 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
         binding.btnForward.alpha = if (currentWebView?.canGoForward() == true) 1.0f else 0.4f
     }
 
-    /**
-     * MEDIUM FIX: Dynamic SSL icon - shows lock (green) for HTTPS, unlock (red) for HTTP
-     */
     private fun updateSslIcon(url: String) {
         val isSecure = url.startsWith("https://")
         with(binding.sslIcon) {
@@ -425,69 +461,101 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
 
     private fun showBrowserMenu() {
         val isDesktop = tabManager.getActiveTab()?.isDesktopMode ?: false
-        val isBookmarked = currentWebView?.url?.let { bookmarkManager.isBookmarked(it) } ?: false
 
-        val opts = arrayOf(
-            if (isDesktop) getString(R.string.switch_to_mobile) else getString(R.string.switch_to_desktop),
-            getString(R.string.open_in_system_browser),
-            if (isBookmarked) getString(R.string.remove_bookmark) else getString(R.string.bookmark),
-            getString(R.string.bookmarks),
-            getString(R.string.history),
-            getString(R.string.share),
-            getString(R.string.find_in_page),
-            getString(R.string.settings)
-        )
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.browser_menu)
-            .setItems(opts) { _, w ->
-                when (w) {
-                    0 -> toggleDesktopMode()
-                    1 -> openInSystemBrowser()
-                    2 -> toggleBookmark()
-                    3 -> showBookmarks()
-                    4 -> showHistory()
-                    5 -> sharePage()
-                    6 -> findInPage()
-                    7 -> showSettings()
+        lifecycleScope.launch {
+            val isBookmarked = currentWebView?.url?.let {
+                withContext(Dispatchers.IO) { bookmarkDao.isBookmarked(it) }
+            } ?: false
+
+            val opts = arrayOf(
+                if (isDesktop) getString(R.string.switch_to_mobile) else getString(R.string.switch_to_desktop),
+                getString(R.string.open_in_system_browser),
+                if (isBookmarked) getString(R.string.remove_bookmark) else getString(R.string.bookmark),
+                getString(R.string.bookmarks),
+                getString(R.string.history),
+                getString(R.string.share),
+                getString(R.string.find_in_page),
+                if (adBlocker.isEnabled) getString(R.string.ad_blocker_off) else getString(R.string.ad_blocker_on),
+                if (popupBlocker.isEnabled) getString(R.string.popup_blocker_off) else getString(R.string.popup_blocker_on),
+                getString(R.string.settings)
+            )
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle(R.string.browser_menu)
+                .setItems(opts) { _, w ->
+                    when (w) {
+                        0 -> toggleDesktopMode()
+                        1 -> openInSystemBrowser()
+                        2 -> toggleBookmark()
+                        3 -> showBookmarks()
+                        4 -> showFullHistory()
+                        5 -> sharePage()
+                        6 -> findInPage()
+                        7 -> toggleAdBlocker()
+                        8 -> togglePopupBlocker()
+                        9 -> showSettings()
+                    }
                 }
-            }
-            .show()
+                .show()
+        }
     }
 
-    // === BOOKMARKS ===
+    // === BOOKMARKS (Room DB) ===
 
     private fun toggleBookmark() {
         val url = currentWebView?.url ?: return
         val title = currentWebView?.title ?: url
-        if (bookmarkManager.isBookmarked(url)) {
-            bookmarkManager.removeBookmark(url)
-            Toast.makeText(this, R.string.bookmark_removed, Toast.LENGTH_SHORT).show()
-        } else {
-            bookmarkManager.addBookmark(url, title)
-            Toast.makeText(this, getString(R.string.bookmarked) + ": $title", Toast.LENGTH_SHORT).show()
+
+        lifecycleScope.launch {
+            val isBookmarked = withContext(Dispatchers.IO) { bookmarkDao.isBookmarked(url) }
+            if (isBookmarked) {
+                withContext(Dispatchers.IO) { bookmarkDao.deleteByUrl(url) }
+                Toast.makeText(this@MainActivity, R.string.bookmark_removed, Toast.LENGTH_SHORT).show()
+            } else {
+                withContext(Dispatchers.IO) { bookmarkDao.insert(BookmarkEntity(url = url, title = title)) }
+                Toast.makeText(this@MainActivity, getString(R.string.bookmarked) + ": $title", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     private fun showBookmarks() {
-        val bookmarks = bookmarkManager.getAllBookmarks()
-        if (bookmarks.isEmpty()) {
-            Toast.makeText(this, R.string.no_bookmarks, Toast.LENGTH_SHORT).show()
-            return
-        }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.bookmarks)
-            .setItems(bookmarks.map { it.first }.toTypedArray()) { _, w ->
-                loadUrl(bookmarks[w].second)
+        lifecycleScope.launch {
+            val bookmarks = withContext(Dispatchers.IO) { bookmarkDao.getAllBookmarksOnce() }
+            if (bookmarks.isEmpty()) {
+                Toast.makeText(this@MainActivity, R.string.no_bookmarks, Toast.LENGTH_SHORT).show()
+                return@launch
             }
-            .show()
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle(R.string.bookmarks)
+                .setItems(bookmarks.map { it.title }.toTypedArray()) { _, w ->
+                    loadUrl(bookmarks[w].url)
+                }
+                .show()
+        }
     }
 
-    // === HISTORY ===
+    // === HISTORY (Room DB) ===
+
+    private fun showFullHistory() {
+        lifecycleScope.launch {
+            val history = withContext(Dispatchers.IO) { historyDao.getRecentHistory(100) }
+            if (history.isEmpty()) {
+                Toast.makeText(this@MainActivity, R.string.no_history, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle(R.string.history)
+                .setItems(history.map { it.title }.toTypedArray()) { _, w ->
+                    loadUrl(history[w].url)
+                }
+                .show()
+        }
+    }
 
     private fun showHistory() {
+        // Use WebView back-forward list for current tab history
         val h = currentWebView?.copyBackForwardList()
         if (h == null || h.size == 0) {
-            Toast.makeText(this, R.string.no_history, Toast.LENGTH_SHORT).show()
+            showFullHistory()
             return
         }
         val items = (0 until h.size).map { h.getItemAtIndex(it).title ?: h.getItemAtIndex(it).url }
@@ -528,13 +596,46 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
             .show()
     }
 
+    // === AD BLOCKER ===
+
+    private fun toggleAdBlocker() {
+        adBlocker.isEnabled = !adBlocker.isEnabled
+        Toast.makeText(
+            this,
+            if (adBlocker.isEnabled) R.string.ad_blocker_on else R.string.ad_blocker_off,
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    // === POPUP BLOCKER ===
+
+    private fun togglePopupBlocker() {
+        popupBlocker.isEnabled = !popupBlocker.isEnabled
+        // Re-apply to current WebView
+        currentWebView?.let { popupBlocker.applyToWebView(it) }
+        Toast.makeText(
+            this,
+            if (popupBlocker.isEnabled) R.string.popup_blocker_on else R.string.popup_blocker_off,
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     // === SETTINGS ===
 
     private fun showSettings() {
+        val options = arrayOf(
+            getString(R.string.clear_browsing_data),
+            getString(R.string.crash_logs),
+            getString(R.string.about_zbrowser)
+        )
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.settings)
-            .setItems(arrayOf(getString(R.string.clear_browsing_data), getString(R.string.about_zbrowser))) { _, w ->
-                when (w) { 0 -> clearData(); 1 -> showAbout() }
+            .setItems(options) { _, w ->
+                when (w) {
+                    0 -> clearData()
+                    1 -> showCrashLogs()
+                    2 -> showAbout()
+                }
             }.show()
     }
 
@@ -550,6 +651,11 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
                 currentWebView = null
                 android.webkit.CookieManager.getInstance().removeAllCookies(null)
                 WebView.clearClientCertPreferences(null)
+                // Clear Room databases
+                lifecycleScope.launch(Dispatchers.IO) {
+                    historyDao.deleteAll()
+                    bookmarkDao.deleteAll()
+                }
                 addNewTab(TabManager.HOME_URL)
                 Toast.makeText(this, R.string.cleared, Toast.LENGTH_SHORT).show()
             }
@@ -562,6 +668,57 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
             .setTitle(R.string.about_zbrowser)
             .setMessage(R.string.about_message)
             .setPositiveButton(R.string.ok, null)
+            .show()
+    }
+
+    // === CRASH REPORTER ===
+
+    private fun checkForCrash() {
+        if (CrashReporter.hasUnreadCrash()) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.crash_detected_title)
+                .setMessage(R.string.crash_detected_message)
+                .setPositiveButton(R.string.view_crash_log) { _, _ ->
+                    showCrashLogs()
+                    CrashReporter.markCrashRead()
+                }
+                .setNegativeButton(R.string.dismiss_crash) { _, _ ->
+                    CrashReporter.markCrashRead()
+                }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
+    private fun showCrashLogs() {
+        val logs = CrashReporter.getAllCrashLogs()
+        if (logs.isEmpty()) {
+            Toast.makeText(this, R.string.no_crash_logs, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val logContents = logs.map { it.name }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.crash_log_title)
+            .setItems(logContents) { _, w ->
+                val content = logs[w].readText()
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(logs[w].name)
+                    .setMessage(content.take(5000))
+                    .setPositiveButton(R.string.ok, null)
+                    .setNeutralButton(R.string.share_crash_log) { _, _ ->
+                        startActivity(Intent.createChooser(Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, content)
+                            type = "text/plain"
+                        }, getString(R.string.share_via)))
+                    }
+                    .show()
+            }
+            .setNeutralButton(R.string.clear_crash_logs) { _, _ ->
+                CrashReporter.clearAllLogs()
+                Toast.makeText(this, R.string.cleared, Toast.LENGTH_SHORT).show()
+            }
             .show()
     }
 

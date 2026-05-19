@@ -9,33 +9,41 @@ import android.net.http.SslError
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.zbrowser.app.data.HistoryDao
+import com.zbrowser.app.data.HistoryEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Custom WebViewClient for the browser.
- * Handles URL interception, page lifecycle callbacks, error handling, and security.
- * Separated from MainActivity for clean architecture and testability.
+ * Handles URL interception, page lifecycle callbacks, error handling, security,
+ * ad blocking, popup blocking, and history recording.
  */
 class BrowserWebViewClient(
     private val context: Context,
-    private val tabLookup: (WebView?) -> BrowserTab?
+    private val tabLookup: (WebView?) -> BrowserTab?,
+    private val adBlocker: AdBlocker,
+    private val popupBlocker: PopupBlocker,
+    private val historyDao: HistoryDao?,
+    private val appScope: CoroutineScope? = null
 ) : WebViewClient() {
 
-    /**
-     * Callback interface for page lifecycle events.
-     */
     interface Callback {
         fun onPageLoadStarted(url: String, isDesktopMode: Boolean)
         fun onPageLoadFinished(title: String, url: String, isDesktopMode: Boolean)
         fun onPageLoadError(errorMsg: String, url: String)
         fun onSslError(handler: SslErrorHandler, error: SslError)
+        fun onPopupBlocked()
     }
 
     var callback: Callback? = null
 
-    // Desktop mode viewport JavaScript - applied AFTER page load to avoid layout shift
+    // Viewport JavaScript
     private val desktopViewportJs = """
         (function() {
             var meta = document.querySelector('meta[name="viewport"]');
@@ -64,34 +72,39 @@ class BrowserWebViewClient(
         })();
     """.trimIndent()
 
+    /**
+     * FEATURE 4: Ad Blocker - intercept requests and block ad/tracker domains.
+     */
+    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+        if (request != null && adBlocker.shouldBlock(request)) {
+            return adBlocker.createBlockedResponse()
+        }
+        return super.shouldInterceptRequest(view, request)
+    }
+
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
         val scheme = request.url.scheme?.lowercase() ?: ""
 
         when (scheme) {
-            // Safe external schemes - launch in appropriate app
             "tel", "mailto", "sms", "geo" -> {
                 try {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 } catch (e: Exception) {
-                    // No app to handle this scheme
+                    // No app to handle
                 }
                 return true
             }
-            // CRITICAL FIX: Block intent:// scheme - only extract safe fallback URL
             "intent" -> {
                 val fallback = SecurityUtils.extractSafeFallbackFromIntent(url)
                 if (fallback != null) {
                     view?.loadUrl(fallback)
                 }
-                // Always return true - never launch external apps from intent://
                 return true
             }
-            // Block all other dangerous schemes (file://, javascript:, data:, etc.)
             "file", "javascript", "data" -> return true
         }
 
-        // All http/https URLs stay inside the WebView
         return false
     }
 
@@ -99,12 +112,11 @@ class BrowserWebViewClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
 
-        // Determine the desktop mode for this tab
         val isDesktop = tabLookup(view)?.isDesktopMode ?: false
-
-        // Re-apply desktop mode settings BEFORE every page load to ensure consistency
         view?.let { wv ->
             applyModeSettings(wv.settings, isDesktop)
+            // Apply popup blocker settings on each page load
+            popupBlocker.applyToWebView(wv)
         }
 
         url?.let {
@@ -119,11 +131,21 @@ class BrowserWebViewClient(
             val pageUrl = url ?: ""
             val isDesktop = tabLookup(wv)?.isDesktopMode ?: false
 
-            // Apply viewport JS AFTER page load to match the mode
+            // Apply viewport JS
             if (isDesktop) {
                 wv.evaluateJavascript(desktopViewportJs, null)
             } else {
                 wv.evaluateJavascript(mobileViewportJs, null)
+            }
+
+            // FEATURE 4: Inject ad-hiding CSS
+            if (adBlocker.isEnabled) {
+                wv.evaluateJavascript(AdBlocker.AD_HIDE_CSS, null)
+            }
+
+            // Record history in Room database
+            if (title.isNotEmpty() && pageUrl.startsWith("http")) {
+                recordHistory(title, pageUrl)
             }
 
             callback?.onPageLoadFinished(
@@ -134,7 +156,6 @@ class BrowserWebViewClient(
         }
     }
 
-    // CRITICAL FIX: Escape HTML in error page to prevent XSS
     override fun onReceivedError(
         view: WebView?,
         request: WebResourceRequest?,
@@ -154,15 +175,21 @@ class BrowserWebViewClient(
         }
     }
 
+    /**
+     * Record a page visit in the Room history database.
+     */
+    private fun recordHistory(title: String, url: String) {
+        val dao = historyDao ?: return
+        val scope = appScope ?: return
+        scope.launch(Dispatchers.IO) {
+            dao.insert(HistoryEntity(url = url, title = title))
+        }
+    }
+
     companion object {
-        // Modern desktop user agent (updated to Chrome 131)
         private const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
-        /**
-         * Apply desktop or mobile mode WebView settings.
-         * Desktop mode = desktop UA + wide viewport + no overview mode
-         */
         @SuppressLint("SetJavaScriptEnabled")
         fun applyModeSettings(settings: WebSettings, desktopMode: Boolean, mobileUserAgent: String? = null) {
             if (desktopMode) {

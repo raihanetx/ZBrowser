@@ -39,9 +39,38 @@ jobs:
         name: lint-report
         path: app/build/reports/lint-results-debug.html
 
-  build:
+  test:
     runs-on: ubuntu-latest
     needs: lint
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.9'
+        validate-wrappers: false
+
+    - name: Run Unit Tests
+      run: gradle testDebugUnitTest
+
+    - name: Upload Test Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-report
+        path: app/build/reports/tests/testDebugUnitTest/
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
 
     steps:
     - name: Checkout code
@@ -89,22 +118,28 @@ jobs:
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v2.0.${{ github.run_number }}
-        name: ZBrowser v2.0.${{ github.run_number }}
+        tag_name: v3.0.${{ github.run_number }}
+        name: ZBrowser v3.0.${{ github.run_number }}
         body: |
-          ## ZBrowser v2.0 - Optimized & Secure Android Browser
+          ## ZBrowser v3.0 - Full-Feature Android Browser
 
           Built from commit: ${{ github.sha }}
 
-          ### v2.0 Highlights
-          - **Security**: XSS prevention, encrypted bookmarks, blocked dangerous schemes
-          - **Architecture**: Clean separation (ViewModel, TabManager, BookmarkManager)
-          - **Performance**: ViewBinding, memory-optimized tab management
-          - **UX**: Dynamic SSL icon, bookmark management, visible tab bar
+          ### v3.0 Features
+          - **Ad Blocker**: Blocks ads, trackers, and analytics with CSS hiding
+          - **Popup Blocker**: Blocks window.open() spam
+          - **Download Manager**: Download files with system notifications
+          - **Room Database**: Structured bookmarks & history storage
+          - **Hilt DI**: Professional dependency injection
+          - **Kotlin Coroutines**: Async database operations
+          - **Crash Reporter**: Local crash log capture & sharing
+          - **Runtime Permissions**: Camera, mic, location for web content
+          - **Multi-Window**: Split-screen and freeform window support
+          - **Unit Tests**: SecurityUtils, TabManager, AdBlocker test coverage
 
           ### Downloads
           - **ZBrowser-debug.apk** - Debug build for testing
-          - **ZBrowser-release.apk** - Signed release build (ProGuard + shrinkResources optimized)
+          - **ZBrowser-release.apk** - Signed release build
         files: |
           app/build/outputs/apk/debug/*.apk
           app/build/outputs/apk/release/*.apk

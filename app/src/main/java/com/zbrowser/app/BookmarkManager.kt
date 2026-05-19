@@ -4,69 +4,55 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.zbrowser.app.data.BookmarkDao
+import com.zbrowser.app.data.BookmarkEntity
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
- * Manages browser bookmarks with encrypted storage using EncryptedSharedPreferences.
- * Prevents unauthorized access to bookmark data on rooted devices.
+ * Manages browser bookmarks with dual storage:
+ * 1. Room database (primary) — for structured queries, search, and reactive UI
+ * 2. Encrypted SharedPreferences (migration fallback) — for reading old bookmarks
+ *
+ * All new bookmarks are stored in Room. On first access, any legacy
+ * EncryptedSharedPreferences bookmarks are migrated to Room.
  */
-class BookmarkManager(context: Context) {
-
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
-
-    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        "secure_bookmarks",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+@Singleton
+class BookmarkManager @Inject constructor(
+    private val bookmarkDao: BookmarkDao,
+    @LegacyBookmarks private val legacyPrefs: SharedPreferences
+) {
+    private var migrated = false
 
     /**
-     * Add a bookmark. URL is the key, title is the value.
-     * Overwrites existing bookmark for the same URL.
+     * Migrate legacy encrypted bookmarks to Room on first access.
      */
-    fun addBookmark(url: String, title: String) {
-        if (url.isNotBlank()) {
-            prefs.edit().putString(url, title).apply()
+    suspend fun migrateIfNeeded() {
+        if (migrated) return
+        migrated = true
+
+        val existing = bookmarkDao.getAllBookmarksOnce()
+        if (existing.isNotEmpty()) return  // Already have bookmarks in Room
+
+        withContext(Dispatchers.IO) {
+            val legacyBookmarks = legacyPrefs.all
+            for ((url, title) in legacyBookmarks) {
+                val titleStr = (title as? String) ?: url
+                bookmarkDao.insert(BookmarkEntity(url = url, title = titleStr))
+            }
+            // Clear legacy storage after migration
+            if (legacyBookmarks.isNotEmpty()) {
+                legacyPrefs.edit().clear().apply()
+            }
         }
     }
-
-    /**
-     * Remove a bookmark by URL.
-     */
-    fun removeBookmark(url: String) {
-        prefs.edit().remove(url).apply()
-    }
-
-    /**
-     * Check if a URL is bookmarked.
-     */
-    fun isBookmarked(url: String): Boolean {
-        return prefs.contains(url)
-    }
-
-    /**
-     * Get the title for a bookmarked URL, or null if not bookmarked.
-     */
-    fun getBookmarkTitle(url: String): String? {
-        return prefs.getString(url, null)
-    }
-
-    /**
-     * Get all bookmarks as a list of (title, url) pairs, sorted by title.
-     */
-    fun getAllBookmarks(): List<Pair<String, String>> {
-        return prefs.all.map { (url, title) ->
-            (title as? String ?: url) to url
-        }.sortedBy { it.first.lowercase() }
-    }
-
-    /**
-     * Clear all bookmarks.
-     */
-    fun clearAll() {
-        prefs.edit().clear().apply()
-    }
 }
+
+/**
+ * Qualifier annotation for legacy encrypted SharedPreferences bookmarks.
+ */
+@javax.inject.Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class LegacyBookmarks
