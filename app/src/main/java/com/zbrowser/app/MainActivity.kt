@@ -4,11 +4,15 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.http.SslError
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -53,9 +57,9 @@ class MainActivity : AppCompatActivity() {
     private var isDesktopMode = false
     private var currentWebView: WebView? = null
 
-    private val mobileUserAgent: String by lazy {
-        WebView(this).settings.userAgentString
-    }
+    // FIX: Cache the default mobile UA on first real WebView creation instead of
+    // creating a throwaway WebView that would leak memory and context
+    private var mobileUserAgent: String? = null
 
     private val desktopUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -117,7 +121,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); currentWebView?.onResume() }
     override fun onPause() { super.onPause(); currentWebView?.onPause() }
-    override fun onDestroy() { webViews.forEach { it.destroy() }; super.onDestroy() }
+
+    override fun onDestroy() {
+        webViews.forEach { it.destroy() }
+        super.onDestroy()
+    }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && currentWebView?.canGoBack() == true) {
@@ -217,17 +225,23 @@ class MainActivity : AppCompatActivity() {
         s.javaScriptCanOpenWindowsAutomatically = true
         s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         s.cacheMode = WebSettings.LOAD_DEFAULT
-        s.allowFileAccess = true
-        s.allowContentAccess = true
+
+        // FIX: Disable file access from web content to prevent local file theft
+        s.allowFileAccess = false
+        s.allowContentAccess = false
+
         s.loadsImagesAutomatically = true
+
+        // FIX: Cache the default mobile UA from the first WebView instead of
+        // creating a separate throwaway WebView that leaks memory
+        if (mobileUserAgent == null) {
+            mobileUserAgent = s.userAgentString
+        }
 
         applyModeSettings(s, desktopMode)
 
         webView.webViewClient = object : WebViewClient() {
 
-            // *** FIX 1: Keep ALL http/https URLs inside the WebView ***
-            // Only override for special schemes (tel, mailto, sms, etc.)
-            // For http/https, return false so WebView handles them internally
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
                 val scheme = request.url.scheme?.lowercase() ?: ""
@@ -251,7 +265,6 @@ class MainActivity : AppCompatActivity() {
                                 view?.loadUrl(fallbackUrl)
                                 return true
                             }
-                            // If there's a resolvable app, let system handle
                             if (intent.resolveActivity(packageManager) != null) {
                                 startActivity(intent)
                                 return true
@@ -263,16 +276,14 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // *** ALL http/https URLs stay inside the WebView ***
-                // Return false = WebView loads it internally, NOT the system browser
+                // ALL http/https URLs stay inside the WebView
                 return false
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
 
-                // *** FIX 2: Re-apply desktop mode settings BEFORE every page load ***
-                // This ensures the user-agent and viewport settings are always correct
+                // Re-apply desktop mode settings BEFORE every page load
                 view?.let { wv ->
                     val tab = findTabForWebView(wv)
                     if (tab != null) {
@@ -283,7 +294,6 @@ class MainActivity : AppCompatActivity() {
                 url?.let {
                     progressBar.visibility = View.VISIBLE
                     progressBar.progress = 0
-                    // Update URL bar and tab URL only if this is the active tab
                     val tab = view?.let { findTabForWebView(it) }
                     if (tab != null) {
                         tab.url = it
@@ -302,12 +312,10 @@ class MainActivity : AppCompatActivity() {
                     progressBar.visibility = View.GONE
                     swipeRefresh.isRefreshing = false
 
-                    // *** FIX 3: Use the CORRECT tab for this WebView, not just activeTab ***
                     val tab = findTabForWebView(wv)
                     if (tab?.isDesktopMode == true) {
                         wv.evaluateJavascript(desktopViewportJs, null)
                     } else {
-                        // Also enforce mobile viewport for mobile mode
                         wv.evaluateJavascript(mobileViewportJs, null)
                     }
 
@@ -318,13 +326,44 @@ class MainActivity : AppCompatActivity() {
                         if (idx >= 0 && idx < tabLayout.tabCount) {
                             tabLayout.getTabAt(idx)?.text = t.title
                         }
-                        // Only update URL bar if this is the active tab
                         if (t.id == activeTabId) {
                             urlBar.setText(pageUrl)
                         }
                     }
                     updateNavigationButtons()
                 }
+            }
+
+            // FIX: Handle page load errors so user sees feedback instead of blank screen
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                super.onReceivedError(view, request, error)
+                if (request?.isForMainFrame == true) {
+                    view?.let { wv ->
+                        val errorMsg = error?.description?.toString() ?: "Unknown error"
+                        wv.loadDataWithBaseURL(
+                            null,
+                            """<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;text-align:center;color:#666'>
+                            <div><h2>Page Load Error</h2><p>$errorMsg</p><p><a href="${view?.url}">Try Again</a></p></div>
+                            </body></html>""",
+                            "text/html",
+                            "UTF-8",
+                            null
+                        )
+                    }
+                    progressBar.visibility = View.GONE
+                    swipeRefresh.isRefreshing = false
+                }
+            }
+
+            // FIX: Handle SSL errors properly — ask user instead of silently failing
+            override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle("SSL Certificate Error")
+                    .setMessage("The site's security certificate is not trusted.\n\nError: ${error?.toString() ?: "Unknown"}\n\nProceed anyway?")
+                    .setPositiveButton("Proceed") { _, _ -> handler?.proceed() }
+                    .setNegativeButton("Cancel") { _, _ -> handler?.cancel() }
+                    .setOnCancelListener { handler?.cancel() }
+                    .show()
             }
         }
 
@@ -334,21 +373,19 @@ class MainActivity : AppCompatActivity() {
                 if (newProgress == 100) progressBar.visibility = View.GONE
             }
 
-            // *** FIX 4: Properly handle new window requests (target="_blank" links) ***
-            // Use WebViewTransport to capture the URL, then open in a new tab
+            // FIX: Properly handle new window requests — destroy temp WebView after use
             override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean {
-                // Create a temporary WebView to intercept the URL from the new window request
                 val newWebView = WebView(this@MainActivity)
                 newWebView.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(wv: WebView?, request: WebResourceRequest?): Boolean {
                         val url = request?.url?.toString() ?: return false
-                        // Open the URL as a new tab in our browser, NOT in system browser
                         runOnUiThread { addNewTab(url) }
+                        // FIX: Destroy the temp WebView after intercepting the URL to prevent memory leak
+                        wv?.destroy()
                         return true
                     }
                 }
 
-                // Attach the temp WebView to the transport so it receives the URL
                 val transport = resultMsg?.obj as? WebView.WebViewTransport
                 transport?.webView = newWebView
                 resultMsg?.sendToTarget()
@@ -370,7 +407,7 @@ class MainActivity : AppCompatActivity() {
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = false
         } else {
-            settings.userAgentString = mobileUserAgent
+            settings.userAgentString = mobileUserAgent ?: settings.userAgentString
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
         }
@@ -413,13 +450,26 @@ class MainActivity : AppCompatActivity() {
     private fun closeTab(tabId: Int) {
         val tab = tabs.find { it.id == tabId } ?: return
         val idx = tabs.indexOf(tab)
-        if (tab.webViewIndex < webViews.size) {
-            webViews[tab.webViewIndex].let { webViewContainer.removeView(it); it.destroy() }
-            webViews.removeAt(tab.webViewIndex)
+        val removedWvIdx = tab.webViewIndex
+
+        // Destroy and remove the WebView
+        if (removedWvIdx < webViews.size) {
+            webViews[removedWvIdx].let { webViewContainer.removeView(it); it.destroy() }
+            webViews.removeAt(removedWvIdx)
         }
+
+        // Remove the tab
         tabs.removeAt(idx)
         tabLayout.removeTabAt(idx)
-        tabs.forEachIndexed { i, t -> t.webViewIndex = i }
+
+        // FIX: Properly update webViewIndex for all remaining tabs
+        // Any tab whose webViewIndex was above the removed one needs to shift down by 1
+        for (t in tabs) {
+            if (t.webViewIndex > removedWvIdx) {
+                t.webViewIndex -= 1
+            }
+        }
+
         if (tabs.isEmpty()) { addNewTab(HOME_URL); return }
         switchToTab(tabs[minOf(idx, tabs.size - 1)].id)
         updateTabCount()
@@ -535,7 +585,11 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this).apply { hint = "Search on page..."; setPadding(48, 24, 48, 24) }
         MaterialAlertDialogBuilder(this)
             .setTitle("Find in Page").setView(input)
-            .setPositiveButton("Find") { _, _ -> currentWebView?.findAllAsync(input.text.toString()) }
+            .setPositiveButton("Find") { _, _ ->
+                currentWebView?.findAllAsync(input.text.toString())
+            }
+            // FIX: Add "Clear" button to dismiss search highlights
+            .setNeutralButton("Clear") { _, _ -> currentWebView?.clearMatches() }
             .setNegativeButton("Cancel", null).show()
     }
 
@@ -552,7 +606,10 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Clear Browsing Data")
             .setMessage("Clear cache, cookies, history?")
             .setPositiveButton("Clear") { _, _ ->
-                webViewContainer.removeAllViews(); webViews.forEach { it.destroy() }; webViews.clear()
+                webViewContainer.removeAllViews()
+                // FIX: Clear cache on each WebView before destroying
+                webViews.forEach { it.clearCache(true); it.destroy() }
+                webViews.clear()
                 tabs.clear(); tabLayout.removeAllTabs(); currentWebView = null
                 android.webkit.CookieManager.getInstance().removeAllCookies(null)
                 WebView.clearClientCertPreferences(null)
