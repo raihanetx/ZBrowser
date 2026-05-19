@@ -1,7 +1,6 @@
 package com.zbrowser.app
 
 import android.net.Uri
-import android.text.TextUtils
 
 /**
  * Security utility methods for the browser engine.
@@ -28,7 +27,7 @@ object SecurityUtils {
      * Blocks dangerous schemes like file://, javascript:, data: (except our own error pages).
      */
     fun isUrlSafe(url: String): Boolean {
-        if (TextUtils.isEmpty(url)) return false
+        if (url.isEmpty()) return false
         val scheme = url.substringBefore(":", "").lowercase()
         return when (scheme) {
             "http", "https" -> true
