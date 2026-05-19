@@ -25,7 +25,7 @@ android {
             val ksKeyPassword = System.getenv("KEY_PASSWORD")
 
             if (ksFile != null) {
-                storeFile = file(ksFile)
+                storeFile = rootProject.file(ksFile)
             }
             if (ksPassword != null) {
                 storePassword = ksPassword
