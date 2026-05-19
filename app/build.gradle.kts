@@ -93,7 +93,9 @@ dependencies {
     // Lifecycle & ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.7")
     implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.savedstate:savedstate:1.2.1")
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
 
     // Encrypted SharedPreferences for secure bookmark storage
