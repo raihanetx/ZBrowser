@@ -1,0 +1,54 @@
+# CodeRabbit Configuration for ZBrowser
+# Docs: https://docs.coderabbit.ai
+
+# Language settings
+language: en-US
+
+# Review settings
+reviews:
+  # Auto-review on new PRs
+  auto_review:
+    enabled: true
+    # Review draft PRs too
+    drafts: false
+
+  # Review profile - "chill" = less strict, "assertive" = more thorough
+  profile: "assertive"
+
+  # What to review
+  review_status: true
+
+  # High-level summary at the top of the review
+  high_level_summary: true
+
+  # Poem for fun (optional)
+  poem: false
+
+  # Sequence diagrams for code flow
+  sequence_diagrams: true
+
+  # Estimate the cost of the PR
+  estimate_code_cost: true
+
+# Chat settings
+chat:
+  # Enable auto-reply in PR comments
+  auto_reply: true
+
+# Knowledge base - learn from your project
+knowledge_base:
+  # Learn from past PR reviews
+  learnings:
+    enabled: true
+  # Issue tracker integration
+  issues:
+    enabled: true
+
+# Tools
+tools:
+  # Run linters
+  lint:
+    enabled: false  # No Android linter configured yet
+  # Markdown linting
+  markdownlint:
+    enabled: false
