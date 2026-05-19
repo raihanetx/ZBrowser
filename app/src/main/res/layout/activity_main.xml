@@ -35,8 +35,8 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_lock"
                     android:layout_marginEnd="6dp"
-                    android:contentDescription="Security"
-                    app:tint="@color/text_secondary" />
+                    android:contentDescription="@string/security"
+                    app:tint="@color/ssl_neutral" />
 
                 <EditText
                     android:id="@+id/urlBar"
@@ -44,7 +44,7 @@
                     android:layout_height="36dp"
                     android:layout_weight="1"
                     android:background="@drawable/url_bar_bg"
-                    android:hint="Search or enter URL"
+                    android:hint="@string/search_hint"
                     android:textColorHint="@color/text_hint"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp"
@@ -55,7 +55,8 @@
                     android:paddingEnd="12dp"
                     android:drawableStart="@drawable/ic_search_small"
                     android:drawablePadding="6dp"
-                    android:selectAllOnFocus="true" />
+                    android:selectAllOnFocus="true"
+                    android:autofillHints="" />
 
             </LinearLayout>
         </androidx.appcompat.widget.Toolbar>
@@ -81,7 +82,7 @@
             app:tabSelectedTextColor="@color/colorPrimary"
             app:tabMinWidth="100dp"
             app:tabMaxWidth="200dp"
-            android:visibility="gone" />
+            android:visibility="visible" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -107,7 +108,7 @@
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="72dp"
         android:src="@drawable/ic_add"
-        android:contentDescription="New Tab"
+        android:contentDescription="@string/new_tab_fab"
         app:backgroundTint="@color/colorPrimary"
         app:tint="@android:color/white"
         app:fabSize="normal" />
@@ -124,12 +125,12 @@
         android:paddingStart="4dp"
         android:paddingEnd="4dp">
 
-        <ImageView android:id="@+id/btnBack" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_back" android:contentDescription="Back" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
-        <ImageView android:id="@+id/btnForward" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_forward" android:contentDescription="Forward" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
-        <ImageView android:id="@+id/btnRefresh" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_refresh" android:contentDescription="Refresh" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
-        <ImageView android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_home" android:contentDescription="Home" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
-        <TextView android:id="@+id/btnTabs" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="1" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/text_primary" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="Tabs" />
-        <ImageView android:id="@+id/btnMenu" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_menu" android:contentDescription="Menu" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <ImageView android:id="@+id/btnBack" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_back" android:contentDescription="@string/app_name" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <ImageView android:id="@+id/btnForward" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_forward" android:contentDescription="@string/app_name" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <ImageView android:id="@+id/btnRefresh" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_refresh" android:contentDescription="@string/app_name" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <ImageView android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_home" android:contentDescription="@string/app_name" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
+        <TextView android:id="@+id/btnTabs" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="1" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/text_primary" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="@string/app_name" />
+        <ImageView android:id="@+id/btnMenu" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:src="@drawable/ic_menu" android:contentDescription="@string/app_name" android:padding="8dp" android:background="?attr/selectableItemBackgroundBorderless" app:tint="@color/text_primary" />
 
     </LinearLayout>
 

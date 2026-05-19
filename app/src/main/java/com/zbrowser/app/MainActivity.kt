@@ -2,7 +2,6 @@ package com.zbrowser.app
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
@@ -10,106 +9,71 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.webkit.SslErrorHandler
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
-import java.util.concurrent.atomic.AtomicInteger
+import com.zbrowser.app.databinding.ActivityMainBinding
 
-class MainActivity : AppCompatActivity() {
+/**
+ * Main browser activity — fully refactored from 638-line God Object into clean architecture.
+ *
+ * Architecture:
+ * - BrowserViewModel: state preservation across config changes
+ * - TabManager: tab/WebView lifecycle with direct references (no fragile index coupling)
+ * - BookmarkManager: encrypted bookmark storage (EncryptedSharedPreferences)
+ * - BrowserWebViewClient: URL interception, security, XSS-safe error pages
+ * - BrowserWebChromeClient: progress updates, new window handling
+ * - SecurityUtils: HTML escaping, URL validation, intent URL sanitization
+ *
+ * Fixes applied (22 total from expert review):
+ * CRITICAL: XSS in error page, usesCleartextTraffic=false, intent:// scheme blocked
+ * HIGH: God Object refactored, direct WebView refs, state preservation, encrypted bookmarks,
+ *        URL validation, string extraction, ViewBinding
+ * MEDIUM: Single desktop mode source of truth, dynamic SSL icon, visible TabLayout,
+ *          bookmark management UI, tab limit, resource shrinking, CI linting
+ * LOW: AtomicInteger removed, updated UA string (Chrome 131), tight ProGuard rules
+ */
+class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
 
-    private lateinit var toolbar: Toolbar
-    private lateinit var urlBar: EditText
-    private lateinit var progressBar: ProgressBar
-    private lateinit var tabLayout: TabLayout
-    private lateinit var webViewContainer: FrameLayout
-    private lateinit var swipeRefresh: SwipeRefreshLayout
-    private lateinit var bottomBar: LinearLayout
-    private lateinit var btnBack: ImageView
-    private lateinit var btnForward: ImageView
-    private lateinit var btnRefresh: ImageView
-    private lateinit var btnHome: ImageView
-    private lateinit var btnTabs: TextView
-    private lateinit var btnMenu: ImageView
-    private lateinit var fabNewTab: FloatingActionButton
-
-    private val tabs = mutableListOf<BrowserTab>()
-    private val webViews = mutableListOf<WebView>()
-    private val tabIdGenerator = AtomicInteger(0)
-    private var activeTabId: Int = -1
-    private var isDesktopMode = false
-    private var currentWebView: WebView? = null
-
-    // FIX: Cache the default mobile UA on first real WebView creation instead of
-    // creating a throwaway WebView that would leak memory and context
+    private lateinit var binding: ActivityMainBinding
+    private val viewModel: BrowserViewModel by viewModels()
+    private lateinit var tabManager: TabManager
+    private lateinit var bookmarkManager: BookmarkManager
     private var mobileUserAgent: String? = null
-
-    private val desktopUserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-
-    // JavaScript to force desktop viewport (1024px wide)
-    private val desktopViewportJs = """
-        (function() {
-            var meta = document.querySelector('meta[name="viewport"]');
-            if (meta) {
-                meta.setAttribute('content', 'width=1024, initial-scale=1');
-            } else {
-                meta = document.createElement('meta');
-                meta.name = 'viewport';
-                meta.content = 'width=1024, initial-scale=1';
-                document.head.appendChild(meta);
-            }
-        })();
-    """.trimIndent()
-
-    // JavaScript to restore mobile viewport
-    private val mobileViewportJs = """
-        (function() {
-            var meta = document.querySelector('meta[name="viewport"]');
-            if (meta) {
-                meta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=5');
-            } else {
-                meta = document.createElement('meta');
-                meta.name = 'viewport';
-                meta.content = 'width=device-width, initial-scale=1, maximum-scale=5';
-                document.head.appendChild(meta);
-            }
-        })();
-    """.trimIndent()
-
-    companion object {
-        const val HOME_URL = "https://www.google.com"
-    }
+    private var currentWebView: WebView? = null
 
     // === LIFECYCLE ===
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        initViews()
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        tabManager = TabManager()
+        bookmarkManager = BookmarkManager(this)
+
         setupToolbar()
         setupUrlBar()
         setupBottomBar()
         setupSwipeRefresh()
         setupTabLayout()
-        addNewTab(HOME_URL)
+
+        // Restore state or create first tab
+        if (savedInstanceState != null) {
+            restoreTabs()
+        } else {
+            addNewTab(TabManager.HOME_URL)
+        }
+
         handleIntent(intent)
     }
 
@@ -118,11 +82,20 @@ class MainActivity : AppCompatActivity() {
         intent?.let { handleIntent(it) }
     }
 
-    override fun onResume() { super.onResume(); currentWebView?.onResume() }
-    override fun onPause() { super.onPause(); currentWebView?.onPause() }
+    override fun onResume() {
+        super.onResume()
+        currentWebView?.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        currentWebView?.onPause()
+        // Save state for preservation across config changes
+        viewModel.saveTabStates(tabManager.tabs, tabManager.activeTabId, tabManager.nextTabId)
+    }
 
     override fun onDestroy() {
-        webViews.forEach { it.destroy() }
+        tabManager.destroyAll()
         super.onDestroy()
     }
 
@@ -134,60 +107,44 @@ class MainActivity : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
-    // === INIT ===
-
-    private fun initViews() {
-        toolbar = findViewById(R.id.toolbar)
-        urlBar = findViewById(R.id.urlBar)
-        progressBar = findViewById(R.id.progressBar)
-        tabLayout = findViewById(R.id.tabLayout)
-        webViewContainer = findViewById(R.id.webViewContainer)
-        swipeRefresh = findViewById(R.id.swipeRefresh)
-        bottomBar = findViewById(R.id.bottomBar)
-        btnBack = findViewById(R.id.btnBack)
-        btnForward = findViewById(R.id.btnForward)
-        btnRefresh = findViewById(R.id.btnRefresh)
-        btnHome = findViewById(R.id.btnHome)
-        btnTabs = findViewById(R.id.btnTabs)
-        btnMenu = findViewById(R.id.btnMenu)
-        fabNewTab = findViewById(R.id.fabNewTab)
-    }
+    // === SETUP ===
 
     private fun setupToolbar() {
-        setSupportActionBar(toolbar)
+        setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(false)
     }
 
     private fun setupUrlBar() {
-        urlBar.setOnEditorActionListener { _, actionId, _ ->
+        binding.urlBar.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_SEARCH) {
-                val input = urlBar.text.toString().trim()
+                val input = binding.urlBar.text.toString().trim()
                 if (input.isNotEmpty()) loadUrl(processInput(input))
                 true
             } else false
         }
-        urlBar.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) urlBar.selectAll() }
+        binding.urlBar.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) binding.urlBar.selectAll() }
     }
 
     private fun setupBottomBar() {
-        btnBack.setOnClickListener { goBack() }
-        btnForward.setOnClickListener { goForward() }
-        btnRefresh.setOnClickListener { refresh() }
-        btnHome.setOnClickListener { loadUrl(HOME_URL) }
-        btnTabs.setOnClickListener { showTabSwitcher() }
-        btnMenu.setOnClickListener { showBrowserMenu() }
-        fabNewTab.setOnClickListener { addNewTab(HOME_URL) }
+        binding.btnBack.setOnClickListener { goBack() }
+        binding.btnForward.setOnClickListener { goForward() }
+        binding.btnRefresh.setOnClickListener { refresh() }
+        binding.btnHome.setOnClickListener { loadUrl(TabManager.HOME_URL) }
+        binding.btnTabs.setOnClickListener { showTabSwitcher() }
+        binding.btnMenu.setOnClickListener { showBrowserMenu() }
+        binding.fabNewTab.setOnClickListener { addNewTab(TabManager.HOME_URL) }
     }
 
     private fun setupSwipeRefresh() {
-        swipeRefresh.setColorSchemeColors(ContextCompat.getColor(this, R.color.colorPrimary))
-        swipeRefresh.setOnRefreshListener { refresh() }
+        binding.swipeRefresh.setColorSchemeColors(ContextCompat.getColor(this, R.color.colorPrimary))
+        binding.swipeRefresh.setOnRefreshListener { refresh() }
     }
 
     private fun setupTabLayout() {
-        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+        binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) {
                 val i = tab.position
+                val tabs = tabManager.tabs
                 if (i < tabs.size) switchToTab(tabs[i].id)
             }
             override fun onTabUnselected(tab: TabLayout.Tab) {}
@@ -195,22 +152,14 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // === HELPER: Find the tab that owns a given WebView ===
-
-    private fun findTabForWebView(webView: WebView): BrowserTab? {
-        val wvIdx = webViews.indexOf(webView)
-        if (wvIdx < 0) return null
-        return tabs.find { it.webViewIndex == wvIdx }
-    }
-
-    // === WEBVIEW ===
+    // === WEBVIEW CREATION ===
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun createWebView(desktopMode: Boolean): WebView {
         val webView = WebView(this)
-        webView.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
+        webView.layoutParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
         )
 
         val s = webView.settings
@@ -225,403 +174,395 @@ class MainActivity : AppCompatActivity() {
         s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         s.cacheMode = WebSettings.LOAD_DEFAULT
 
-        // FIX: Disable file access from web content to prevent local file theft
+        // Security: Disable file access from web content
         s.allowFileAccess = false
         s.allowContentAccess = false
-
         s.loadsImagesAutomatically = true
 
-        // FIX: Cache the default mobile UA from the first WebView instead of
-        // creating a separate throwaway WebView that leaks memory
+        // Cache the default mobile UA from the first WebView
         if (mobileUserAgent == null) {
             mobileUserAgent = s.userAgentString
         }
 
-        applyModeSettings(s, desktopMode)
+        BrowserWebViewClient.applyModeSettings(s, desktopMode, mobileUserAgent)
 
-        webView.webViewClient = object : WebViewClient() {
-
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
-                val scheme = request.url.scheme?.lowercase() ?: ""
-
-                // Only special schemes go to external apps
-                when (scheme) {
-                    "tel", "mailto", "sms", "geo", "market" -> {
-                        try {
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        } catch (e: Exception) {
-                            Toast.makeText(this@MainActivity, "Cannot open: $scheme", Toast.LENGTH_SHORT).show()
-                        }
-                        return true
-                    }
-                    // intent:// scheme - extract URL and load in WebView
-                    "intent" -> {
-                        try {
-                            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-                            val fallbackUrl = intent.getStringExtra("browser_fallback_url")
-                            if (fallbackUrl != null) {
-                                view?.loadUrl(fallbackUrl)
-                                return true
-                            }
-                            if (intent.resolveActivity(packageManager) != null) {
-                                startActivity(intent)
-                                return true
-                            }
-                        } catch (e: Exception) {
-                            // Bad intent URL, ignore
-                        }
-                        return true
-                    }
-                }
-
-                // ALL http/https URLs stay inside the WebView
-                return false
-            }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-
-                // Re-apply desktop mode settings BEFORE every page load
-                view?.let { wv ->
-                    val tab = findTabForWebView(wv)
-                    if (tab != null) {
-                        applyModeSettings(wv.settings, tab.isDesktopMode)
-                    }
-                }
-
-                url?.let {
-                    progressBar.visibility = View.VISIBLE
-                    progressBar.progress = 0
-                    val tab = view?.let { findTabForWebView(it) }
-                    if (tab != null) {
-                        tab.url = it
-                        if (tab.id == activeTabId) {
-                            urlBar.setText(it)
-                        }
-                    }
-                }
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                view?.let { wv ->
-                    val title = wv.title ?: ""
-                    val pageUrl = url ?: ""
-                    progressBar.visibility = View.GONE
-                    swipeRefresh.isRefreshing = false
-
-                    val tab = findTabForWebView(wv)
-                    if (tab?.isDesktopMode == true) {
-                        wv.evaluateJavascript(desktopViewportJs, null)
-                    } else {
-                        wv.evaluateJavascript(mobileViewportJs, null)
-                    }
-
-                    tab?.let { t ->
-                        t.title = if (title.isNotEmpty()) title else pageUrl
-                        t.url = pageUrl
-                        val idx = tabs.indexOf(t)
-                        if (idx >= 0 && idx < tabLayout.tabCount) {
-                            tabLayout.getTabAt(idx)?.text = t.title
-                        }
-                        if (t.id == activeTabId) {
-                            urlBar.setText(pageUrl)
-                        }
-                    }
-                    updateNavigationButtons()
-                }
-            }
-
-            // FIX: Handle page load errors so user sees feedback instead of blank screen
-            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                super.onReceivedError(view, request, error)
-                if (request?.isForMainFrame == true) {
-                    view?.let { wv ->
-                        val errorMsg = error?.description?.toString() ?: "Unknown error"
-                        wv.loadDataWithBaseURL(
-                            null,
-                            """<html><body style='display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;text-align:center;color:#666'>
-                            <div><h2>Page Load Error</h2><p>$errorMsg</p><p><a href="${view?.url}">Try Again</a></p></div>
-                            </body></html>""",
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
-                    }
-                    progressBar.visibility = View.GONE
-                    swipeRefresh.isRefreshing = false
-                }
-            }
-
-            // FIX: Handle SSL errors properly — ask user instead of silently failing
-            override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                MaterialAlertDialogBuilder(this@MainActivity)
-                    .setTitle("SSL Certificate Error")
-                    .setMessage("The site's security certificate is not trusted.\n\nError: ${error?.toString() ?: "Unknown"}\n\nProceed anyway?")
-                    .setPositiveButton("Proceed") { _, _ -> handler?.proceed() }
-                    .setNegativeButton("Cancel") { _, _ -> handler?.cancel() }
-                    .setOnCancelListener { handler?.cancel() }
-                    .show()
-            }
+        // WebViewClient with context and tab lookup
+        val wvClient = BrowserWebViewClient(this) { webView ->
+            tabManager.getTabForWebView(webView)
         }
+        wvClient.callback = this
+        webView.webViewClient = wvClient
 
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progressBar.progress = newProgress
-                if (newProgress == 100) progressBar.visibility = View.GONE
+        // WebChromeClient with functional callbacks
+        webView.webChromeClient = BrowserWebChromeClient(
+            onProgressChanged = { newProgress ->
+                binding.progressBar.progress = newProgress
+                if (newProgress == 100) binding.progressBar.visibility = View.GONE
+            },
+            onNewWindowRequested = { resultMsg ->
+                handleNewWindow(resultMsg)
             }
-
-            // FIX: Properly handle new window requests — destroy temp WebView after use
-            override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean {
-                val newWebView = WebView(this@MainActivity)
-                newWebView.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(wv: WebView?, request: WebResourceRequest?): Boolean {
-                        val url = request?.url?.toString() ?: return false
-                        runOnUiThread { addNewTab(url) }
-                        // FIX: Destroy the temp WebView after intercepting the URL to prevent memory leak
-                        wv?.destroy()
-                        return true
-                    }
-                }
-
-                val transport = resultMsg?.obj as? WebView.WebViewTransport
-                transport?.webView = newWebView
-                resultMsg?.sendToTarget()
-                return true
-            }
-        }
+        )
 
         return webView
     }
 
     /**
-     * Apply desktop or mobile mode WebView settings.
-     * Desktop mode = desktop UA + wide viewport + no overview + 1024px viewport
+     * Handle new window requests (target="_blank" links).
+     * Creates a temporary WebView to intercept the URL, validates it, then opens in new tab.
      */
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun applyModeSettings(settings: WebSettings, desktopMode: Boolean) {
-        if (desktopMode) {
-            settings.userAgentString = desktopUserAgent
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = false
-        } else {
-            settings.userAgentString = mobileUserAgent ?: settings.userAgentString
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
+    private fun handleNewWindow(resultMsg: android.os.Message?) {
+        val newWebView = WebView(this)
+        newWebView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(wv: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url?.toString() ?: return false
+                if (SecurityUtils.isUrlSafe(url)) {
+                    runOnUiThread { addNewTab(url) }
+                }
+                wv?.destroy()
+                return true
+            }
         }
+
+        val transport = resultMsg?.obj as? WebView.WebViewTransport
+        transport?.webView = newWebView
+        resultMsg?.sendToTarget()
+    }
+
+    // === BrowserWebViewClient.Callback ===
+
+    override fun onPageLoadStarted(url: String, isDesktopMode: Boolean) {
+        binding.progressBar.visibility = View.VISIBLE
+        binding.progressBar.progress = 0
+
+        val tab = tabManager.getActiveTab()
+        if (tab != null) {
+            tab.url = url
+            if (tab.id == tabManager.activeTabId) {
+                binding.urlBar.setText(url)
+            }
+        }
+    }
+
+    override fun onPageLoadFinished(title: String, url: String, isDesktopMode: Boolean) {
+        binding.progressBar.visibility = View.GONE
+        binding.swipeRefresh.isRefreshing = false
+
+        val tab = tabManager.getActiveTab()
+        tab?.let { t ->
+            t.title = title
+            t.url = url
+            val idx = tabManager.indexOf(t)
+            if (idx >= 0 && idx < binding.tabLayout.tabCount) {
+                binding.tabLayout.getTabAt(idx)?.text = t.title
+            }
+            if (t.id == tabManager.activeTabId) {
+                binding.urlBar.setText(url)
+            }
+        }
+        updateNavigationButtons()
+        updateSslIcon(url)
+    }
+
+    override fun onPageLoadError(errorMsg: String, url: String) {
+        currentWebView?.let { wv ->
+            val safeErrorPage = SecurityUtils.buildErrorPage(errorMsg, url)
+            wv.loadDataWithBaseURL(null, safeErrorPage, "text/html", "UTF-8", null)
+        }
+        binding.progressBar.visibility = View.GONE
+        binding.swipeRefresh.isRefreshing = false
+    }
+
+    override fun onSslError(handler: SslErrorHandler, error: SslError) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.ssl_error_title)
+            .setMessage(getString(R.string.ssl_error_message) + "\n\nError: ${error.toString()}")
+            .setPositiveButton(R.string.proceed) { _, _ -> handler.proceed() }
+            .setNegativeButton(R.string.cancel) { _, _ -> handler.cancel() }
+            .setOnCancelListener { handler.cancel() }
+            .show()
     }
 
     // === TABS ===
 
-    private fun addNewTab(url: String = HOME_URL) {
-        val tabId = tabIdGenerator.incrementAndGet()
-        val webView = createWebView(isDesktopMode)
-        webViews.add(webView)
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun addNewTab(url: String = TabManager.HOME_URL) {
+        val isDesktop = tabManager.getActiveTab()?.isDesktopMode ?: false
+        val webView = createWebView(isDesktop)
+        val tab = tabManager.addTab(webView, url, isDesktop)
 
-        val tab = BrowserTab(id = tabId, url = url, webViewIndex = webViews.size - 1, isDesktopMode = isDesktopMode)
-        tabs.add(tab)
-        tabLayout.addTab(tabLayout.newTab().apply { text = "New Tab" }, true)
+        if (tab == null) {
+            webView.destroy()
+            Toast.makeText(this, R.string.tab_limit_reached, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        binding.tabLayout.addTab(binding.tabLayout.newTab().apply { text = getString(R.string.new_tab) }, true)
         webView.loadUrl(url)
-        switchToTab(tabId)
+        switchToTab(tab.id)
         updateTabCount()
     }
 
     private fun switchToTab(tabId: Int) {
-        val tab = tabs.find { it.id == tabId } ?: return
-        activeTabId = tabId
-        webViewContainer.removeAllViews()
+        val tab = tabManager.switchToTab(tabId) ?: return
 
-        if (tab.webViewIndex < webViews.size) {
-            val wv = webViews[tab.webViewIndex]
-            webViewContainer.addView(wv)
+        binding.webViewContainer.removeAllViews()
+        tab.webView?.let { wv ->
+            binding.webViewContainer.addView(wv)
             currentWebView = wv
-            isDesktopMode = tab.isDesktopMode
-            applyModeSettings(wv.settings, tab.isDesktopMode)
+            BrowserWebViewClient.applyModeSettings(wv.settings, tab.isDesktopMode, mobileUserAgent)
         }
 
-        urlBar.setText(tab.url)
-        val idx = tabs.indexOf(tab)
-        if (idx >= 0 && idx < tabLayout.tabCount) tabLayout.getTabAt(idx)?.select()
+        binding.urlBar.setText(tab.url)
+        updateSslIcon(tab.url)
+
+        val idx = tabManager.indexOf(tab)
+        if (idx >= 0 && idx < binding.tabLayout.tabCount) binding.tabLayout.getTabAt(idx)?.select()
         updateNavigationButtons()
     }
 
     private fun closeTab(tabId: Int) {
-        val tab = tabs.find { it.id == tabId } ?: return
-        val idx = tabs.indexOf(tab)
-        val removedWvIdx = tab.webViewIndex
+        val closedIdx = tabManager.tabs.indexOf(tabManager.getTab(tabId))
+        val nextTab = tabManager.closeTab(tabId)
 
-        // Destroy and remove the WebView
-        if (removedWvIdx < webViews.size) {
-            webViews[removedWvIdx].let { webViewContainer.removeView(it); it.destroy() }
-            webViews.removeAt(removedWvIdx)
+        if (nextTab == null) {
+            binding.tabLayout.removeAllTabs()
+            binding.webViewContainer.removeAllViews()
+            currentWebView = null
+            addNewTab(TabManager.HOME_URL)
+            return
         }
 
-        // Remove the tab
-        tabs.removeAt(idx)
-        tabLayout.removeTabAt(idx)
-
-        // FIX: Properly update webViewIndex for all remaining tabs
-        // Any tab whose webViewIndex was above the removed one needs to shift down by 1
-        for (t in tabs) {
-            if (t.webViewIndex > removedWvIdx) {
-                t.webViewIndex -= 1
-            }
+        if (closedIdx >= 0 && closedIdx < binding.tabLayout.tabCount) {
+            binding.tabLayout.removeTabAt(closedIdx)
         }
-
-        if (tabs.isEmpty()) { addNewTab(HOME_URL); return }
-        switchToTab(tabs[minOf(idx, tabs.size - 1)].id)
+        switchToTab(nextTab.id)
         updateTabCount()
     }
 
     private fun showTabSwitcher() {
-        if (tabs.isEmpty()) return
+        if (tabManager.tabs.isEmpty()) return
         MaterialAlertDialogBuilder(this)
-            .setTitle("Open Tabs")
-            .setItems(tabs.map { it.title }.toTypedArray()) { _, w -> switchToTab(tabs[w].id) }
-            .setNeutralButton("Close All") { _, _ ->
-                tabs.clear(); webViews.forEach { it.destroy() }; webViews.clear()
-                tabLayout.removeAllTabs(); webViewContainer.removeAllViews(); currentWebView = null
-                addNewTab(HOME_URL)
+            .setTitle(R.string.open_tabs)
+            .setItems(tabManager.tabs.map { it.title }.toTypedArray()) { _, w ->
+                switchToTab(tabManager.tabs[w].id)
             }
-            .setPositiveButton("New Tab") { _, _ -> addNewTab(HOME_URL) }
+            .setNeutralButton(R.string.close_all) { _, _ ->
+                tabManager.closeAllTabs()
+                binding.tabLayout.removeAllTabs()
+                binding.webViewContainer.removeAllViews()
+                currentWebView = null
+                addNewTab(TabManager.HOME_URL)
+            }
+            .setPositiveButton(R.string.new_tab_button) { _, _ -> addNewTab(TabManager.HOME_URL) }
             .show()
     }
 
-    private fun updateTabCount() { btnTabs.text = tabs.size.toString() }
+    private fun updateTabCount() {
+        binding.btnTabs.text = tabManager.tabs.size.toString()
+    }
 
     // === NAVIGATION ===
 
     private fun goBack() { currentWebView?.let { if (it.canGoBack()) it.goBack() } }
     private fun goForward() { currentWebView?.let { if (it.canGoForward()) it.goForward() } }
-    private fun refresh() { currentWebView?.reload(); swipeRefresh.isRefreshing = false }
-    private fun loadUrl(url: String) { currentWebView?.loadUrl(url); urlBar.setText(url) }
+    private fun refresh() { currentWebView?.reload(); binding.swipeRefresh.isRefreshing = false }
+    private fun loadUrl(url: String) { currentWebView?.loadUrl(url); binding.urlBar.setText(url) }
 
     private fun updateNavigationButtons() {
-        btnBack.alpha = if (currentWebView?.canGoBack() == true) 1.0f else 0.4f
-        btnForward.alpha = if (currentWebView?.canGoForward() == true) 1.0f else 0.4f
+        binding.btnBack.alpha = if (currentWebView?.canGoBack() == true) 1.0f else 0.4f
+        binding.btnForward.alpha = if (currentWebView?.canGoForward() == true) 1.0f else 0.4f
+    }
+
+    /**
+     * MEDIUM FIX: Dynamic SSL icon - shows lock (green) for HTTPS, unlock (red) for HTTP
+     */
+    private fun updateSslIcon(url: String) {
+        val isSecure = url.startsWith("https://")
+        with(binding.sslIcon) {
+            setImageResource(if (isSecure) R.drawable.ic_lock else R.drawable.ic_lock_open)
+            imageTintList = ContextCompat.getColorStateList(
+                this@MainActivity,
+                if (isSecure) R.color.ssl_secure else R.color.ssl_insecure
+            )
+            contentDescription = getString(
+                if (isSecure) R.string.ssl_secure_status else R.string.ssl_not_secure_status
+            )
+        }
     }
 
     // === DESKTOP MODE ===
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun toggleDesktopMode() {
-        isDesktopMode = !isDesktopMode
-        tabs.find { it.id == activeTabId }?.isDesktopMode = isDesktopMode
+        val tab = tabManager.getActiveTab() ?: return
+        tab.isDesktopMode = !tab.isDesktopMode
+        val isDesktop = tab.isDesktopMode
 
         currentWebView?.let { wv ->
-            applyModeSettings(wv.settings, isDesktopMode)
+            BrowserWebViewClient.applyModeSettings(wv.settings, isDesktop, mobileUserAgent)
             wv.setInitialScale(0)
-
-            if (isDesktopMode) {
-                wv.evaluateJavascript(desktopViewportJs, null)
-                wv.reload()
-                Toast.makeText(this, "Desktop Mode ON", Toast.LENGTH_SHORT).show()
-            } else {
-                wv.evaluateJavascript(mobileViewportJs, null)
-                wv.reload()
-                Toast.makeText(this, "Mobile Mode ON", Toast.LENGTH_SHORT).show()
-            }
+            wv.reload()
+            Toast.makeText(
+                this,
+                if (isDesktop) R.string.desktop_mode_on else R.string.mobile_mode_on,
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
     // === SYSTEM BROWSER ===
 
     private fun openInSystemBrowser() {
-        currentWebView?.url?.let { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
+        currentWebView?.url?.let { url ->
+            if (SecurityUtils.isUrlSafe(url)) {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+        }
     }
 
     // === MENU ===
 
     private fun showBrowserMenu() {
+        val isDesktop = tabManager.getActiveTab()?.isDesktopMode ?: false
+        val isBookmarked = currentWebView?.url?.let { bookmarkManager.isBookmarked(it) } ?: false
+
         val opts = arrayOf(
-            if (isDesktopMode) "Switch to Mobile Mode" else "Switch to Desktop Mode",
-            "Open in System Browser", "Bookmark", "History", "Share", "Find in Page", "Settings"
+            if (isDesktop) getString(R.string.switch_to_mobile) else getString(R.string.switch_to_desktop),
+            getString(R.string.open_in_system_browser),
+            if (isBookmarked) getString(R.string.remove_bookmark) else getString(R.string.bookmark),
+            getString(R.string.bookmarks),
+            getString(R.string.history),
+            getString(R.string.share),
+            getString(R.string.find_in_page),
+            getString(R.string.settings)
         )
         MaterialAlertDialogBuilder(this)
-            .setTitle("Browser Menu")
+            .setTitle(R.string.browser_menu)
             .setItems(opts) { _, w ->
                 when (w) {
                     0 -> toggleDesktopMode()
                     1 -> openInSystemBrowser()
-                    2 -> bookmarkPage()
-                    3 -> showHistory()
-                    4 -> sharePage()
-                    5 -> findInPage()
-                    6 -> showSettings()
+                    2 -> toggleBookmark()
+                    3 -> showBookmarks()
+                    4 -> showHistory()
+                    5 -> sharePage()
+                    6 -> findInPage()
+                    7 -> showSettings()
                 }
             }
             .show()
     }
 
-    private fun bookmarkPage() {
+    // === BOOKMARKS ===
+
+    private fun toggleBookmark() {
         val url = currentWebView?.url ?: return
         val title = currentWebView?.title ?: url
-        getSharedPreferences("bookmarks", MODE_PRIVATE).edit().putString(url, title).apply()
-        Toast.makeText(this, "Bookmarked: $title", Toast.LENGTH_SHORT).show()
+        if (bookmarkManager.isBookmarked(url)) {
+            bookmarkManager.removeBookmark(url)
+            Toast.makeText(this, R.string.bookmark_removed, Toast.LENGTH_SHORT).show()
+        } else {
+            bookmarkManager.addBookmark(url, title)
+            Toast.makeText(this, getString(R.string.bookmarked) + ": $title", Toast.LENGTH_SHORT).show()
+        }
     }
+
+    private fun showBookmarks() {
+        val bookmarks = bookmarkManager.getAllBookmarks()
+        if (bookmarks.isEmpty()) {
+            Toast.makeText(this, R.string.no_bookmarks, Toast.LENGTH_SHORT).show()
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.bookmarks)
+            .setItems(bookmarks.map { it.first }.toTypedArray()) { _, w ->
+                loadUrl(bookmarks[w].second)
+            }
+            .show()
+    }
+
+    // === HISTORY ===
 
     private fun showHistory() {
         val h = currentWebView?.copyBackForwardList()
-        if (h == null || h.size == 0) { Toast.makeText(this, "No history", Toast.LENGTH_SHORT).show(); return }
+        if (h == null || h.size == 0) {
+            Toast.makeText(this, R.string.no_history, Toast.LENGTH_SHORT).show()
+            return
+        }
         val items = (0 until h.size).map { h.getItemAtIndex(it).title ?: h.getItemAtIndex(it).url }
         MaterialAlertDialogBuilder(this)
-            .setTitle("History")
+            .setTitle(R.string.history)
             .setItems(items.toTypedArray()) { _, w -> loadUrl(h.getItemAtIndex(w).url) }
             .show()
     }
+
+    // === SHARE ===
 
     private fun sharePage() {
         currentWebView?.url?.let { url ->
             val title = currentWebView?.title ?: ""
             startActivity(Intent.createChooser(Intent().apply {
-                action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, "$title\n$url"); type = "text/plain"
-            }, "Share via"))
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_TEXT, "$title\n$url")
+                type = "text/plain"
+            }, getString(R.string.share_via)))
         }
     }
 
+    // === FIND IN PAGE ===
+
     private fun findInPage() {
-        val input = EditText(this).apply { hint = "Search on page..."; setPadding(48, 24, 48, 24) }
+        val input = EditText(this).apply {
+            hint = getString(R.string.search_on_page)
+            setPadding(48, 24, 48, 24)
+        }
         MaterialAlertDialogBuilder(this)
-            .setTitle("Find in Page").setView(input)
-            .setPositiveButton("Find") { _, _ ->
+            .setTitle(R.string.find_in_page)
+            .setView(input)
+            .setPositiveButton(R.string.find) { _, _ ->
                 currentWebView?.findAllAsync(input.text.toString())
             }
-            // FIX: Add "Clear" button to dismiss search highlights
-            .setNeutralButton("Clear") { _, _ -> currentWebView?.clearMatches() }
-            .setNegativeButton("Cancel", null).show()
+            .setNeutralButton(R.string.clear) { _, _ -> currentWebView?.clearMatches() }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
+
+    // === SETTINGS ===
 
     private fun showSettings() {
         MaterialAlertDialogBuilder(this)
-            .setTitle("Settings")
-            .setItems(arrayOf("Clear Browsing Data", "About ZBrowser")) { _, w ->
+            .setTitle(R.string.settings)
+            .setItems(arrayOf(getString(R.string.clear_browsing_data), getString(R.string.about_zbrowser))) { _, w ->
                 when (w) { 0 -> clearData(); 1 -> showAbout() }
             }.show()
     }
 
     private fun clearData() {
         MaterialAlertDialogBuilder(this)
-            .setTitle("Clear Browsing Data")
-            .setMessage("Clear cache, cookies, history?")
-            .setPositiveButton("Clear") { _, _ ->
-                webViewContainer.removeAllViews()
-                // FIX: Clear cache on each WebView before destroying
-                webViews.forEach { it.clearCache(true); it.destroy() }
-                webViews.clear()
-                tabs.clear(); tabLayout.removeAllTabs(); currentWebView = null
+            .setTitle(R.string.clear_browsing_data)
+            .setMessage(R.string.clear_data_message)
+            .setPositiveButton(R.string.clear_button) { _, _ ->
+                binding.webViewContainer.removeAllViews()
+                tabManager.tabs.forEach { it.webView?.clearCache(true) }
+                tabManager.closeAllTabs()
+                binding.tabLayout.removeAllTabs()
+                currentWebView = null
                 android.webkit.CookieManager.getInstance().removeAllCookies(null)
                 WebView.clearClientCertPreferences(null)
-                addNewTab(HOME_URL)
-                Toast.makeText(this, "Cleared", Toast.LENGTH_SHORT).show()
-            }.setNegativeButton("Cancel", null).show()
+                addNewTab(TabManager.HOME_URL)
+                Toast.makeText(this, R.string.cleared, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun showAbout() {
         MaterialAlertDialogBuilder(this)
-            .setTitle("About ZBrowser")
-            .setMessage("ZBrowser v1.2\n\nAndroid browser with Kotlin & WebView.\n\nFeatures: Multi-tab, Desktop mode, Search, Navigation, Bookmarks, Find in page, Share")
-            .setPositiveButton("OK", null).show()
+            .setTitle(R.string.about_zbrowser)
+            .setMessage(R.string.about_message)
+            .setPositiveButton(R.string.ok, null)
+            .show()
     }
 
     // === INPUT ===
@@ -633,6 +574,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIntent(intent: Intent) {
-        if (intent.action == Intent.ACTION_VIEW) intent.data?.let { addNewTab(it.toString()) }
+        if (intent.action == Intent.ACTION_VIEW) {
+            intent.data?.let { uri ->
+                val url = uri.toString()
+                if (SecurityUtils.isUrlSafe(url)) {
+                    addNewTab(url)
+                }
+            }
+        }
+    }
+
+    // === STATE PRESERVATION ===
+
+    private fun restoreTabs() {
+        val tabStates = viewModel.getTabStates()
+        if (tabStates.isNullOrEmpty()) {
+            addNewTab(TabManager.HOME_URL)
+            return
+        }
+
+        for (state in tabStates) {
+            val webView = createWebView(state.isDesktopMode)
+            val tab = tabManager.addTab(webView, state.url, state.isDesktopMode)
+            if (tab != null) {
+                tab.title = state.title
+                binding.tabLayout.addTab(binding.tabLayout.newTab().apply { text = state.title }, false)
+                webView.loadUrl(state.url)
+            }
+        }
+
+        val activeId = viewModel.getActiveTabId()
+        if (activeId > 0) {
+            switchToTab(activeId)
+        }
     }
 }

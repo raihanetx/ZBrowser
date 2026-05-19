@@ -11,14 +11,16 @@ android {
         applicationId = "com.zbrowser.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "2.0.0"
+    }
+
+    buildFeatures {
+        viewBinding = true
     }
 
     signingConfigs {
         create("release") {
-            // These values come from GitHub Secrets in CI
-            // For local builds, use the keystore file directly
             val ksFile = System.getenv("KEYSTORE_FILE")
             val ksPassword = System.getenv("KEYSTORE_PASSWORD")
             val ksAlias = System.getenv("KEY_ALIAS")
@@ -42,11 +44,16 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            isMinifyEnabled = false
+            applicationIdSuffix = ".debug"
         }
     }
 
@@ -58,6 +65,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    lint {
+        abortOnError = true
+        warningsAsErrors = false
+        disable += "SetJavaScriptEnabled"
+    }
 }
 
 dependencies {
@@ -68,4 +81,12 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
+
+    // Lifecycle & ViewModel
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.7")
+    implementation("androidx.activity:activity-ktx:1.9.3")
+
+    // Encrypted SharedPreferences for secure bookmark storage
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }
