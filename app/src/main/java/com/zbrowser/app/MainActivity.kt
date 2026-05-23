@@ -2,6 +2,7 @@ package com.zbrowser.app
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.http.SslError
 import android.os.Bundle
 import android.view.KeyEvent
@@ -242,7 +243,8 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
             t.url = url
             val idx = tabManager.indexOf(t)
             if (idx >= 0 && idx < binding.tabLayout.tabCount) {
-                binding.tabLayout.getTabAt(idx)?.text = t.title
+                val tab = binding.tabLayout.getTabAt(idx)
+                tab?.customView = tabUiController.createTabView(t.title, t.favicon)
             }
             if (t.id == tabManager.activeTabId) {
                 navigationController.hideProgress()
@@ -277,6 +279,12 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
 
     override fun onPopupBlocked() {
         Toast.makeText(this, R.string.popup_blocked_toast, Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onFaviconReceived(webView: WebView?, icon: Bitmap) {
+        if (webView != null) {
+            tabUiController.updateTabFavicon(webView, icon)
+        }
     }
 
     override fun onRenderProcessGone(webView: WebView) {

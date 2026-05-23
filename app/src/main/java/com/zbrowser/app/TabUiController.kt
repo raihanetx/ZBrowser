@@ -3,14 +3,22 @@ package com.zbrowser.app
 import android.annotation.SuppressLint
 import android.content.ComponentCallbacks2
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.drawable.GradientDrawable
 import android.os.Message
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
@@ -38,6 +46,70 @@ class TabUiController(
     var mobileUserAgent: String? = null
 
     private val lifecycleScope get() = activity.lifecycleScope
+
+    fun createTabView(title: String, favicon: Bitmap? = null): View {
+        val density = activity.resources.displayMetrics.density
+
+        val container = LinearLayout(activity).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
+            background = GradientDrawable().apply {
+                setStroke((1 * density).toInt(), ContextCompat.getColor(activity, R.color.text_secondary))
+                cornerRadius = (6 * density).toInt()
+                setColor(ContextCompat.getColor(activity, android.R.color.transparent))
+            }
+        }
+
+        val iconView = ImageView(activity).apply {
+            layoutParams = ViewGroup.LayoutParams((16 * density).toInt(), (16 * density).toInt())
+            if (favicon != null) {
+                setImageBitmap(favicon)
+            } else {
+                setImageDrawable(ContextCompat.getDrawable(activity, android.R.drawable.ic_menu_compass))
+            }
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        container.addView(iconView)
+
+        val space = View(activity).apply {
+            layoutParams = ViewGroup.LayoutParams((4 * density).toInt(), 0)
+        }
+        container.addView(space)
+
+        val titleView = TextView(activity).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            text = title
+            textSize = 11f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(ContextCompat.getColor(activity, R.color.text_secondary))
+        }
+        container.addView(titleView)
+
+        return container
+    }
+
+    private fun updateTabView(tabIndex: Int, title: String, favicon: Bitmap? = null) {
+        if (tabIndex < 0 || tabIndex >= binding.tabLayout.tabCount) return
+        val tab = binding.tabLayout.getTabAt(tabIndex) ?: return
+        tab.customView = createTabView(title, favicon)
+    }
+
+    fun updateTabFavicon(webView: WebView, icon: Bitmap) {
+        val tab = tabManager.getTabForWebView(webView) ?: return
+        val idx = tabManager.indexOf(tab)
+        if (idx >= 0) {
+            updateTabView(idx, tab.title, icon)
+        }
+    }
 
     fun setupTabLayout() {
         binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
@@ -74,8 +146,8 @@ class TabUiController(
         s.setSupportZoom(true)
         s.builtInZoomControls = true
         s.displayZoomControls = false
-        s.setSupportMultipleWindows(true)
-        s.javaScriptCanOpenWindowsAutomatically = true
+        s.setSupportMultipleWindows(false)
+        s.javaScriptCanOpenWindowsAutomatically = false
         s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         s.allowFileAccess = false
         s.allowContentAccess = false
@@ -87,7 +159,6 @@ class TabUiController(
         }
 
         BrowserWebViewClient.applyModeSettings(s, desktopMode, mobileUserAgent)
-        popupBlocker.applyToWebView(webView)
 
         val wvClient = BrowserWebViewClient(
             context = activity,
@@ -136,8 +207,9 @@ class TabUiController(
         }
 
         binding.webViewContainer.addView(webView)
+        val tabView = createTabView(activity.getString(R.string.new_tab))
         binding.tabLayout.addTab(
-            binding.tabLayout.newTab().apply { text = activity.getString(R.string.new_tab) },
+            binding.tabLayout.newTab().apply { customView = tabView },
             false
         )
         webView.loadUrl(url)
@@ -306,8 +378,9 @@ class TabUiController(
             if (tab != null) {
                 tab.title = state.title
                 binding.webViewContainer.addView(webView)
+                val tabView = createTabView(state.title)
                 binding.tabLayout.addTab(
-                    binding.tabLayout.newTab().apply { text = state.title },
+                    binding.tabLayout.newTab().apply { customView = tabView },
                     false
                 )
 

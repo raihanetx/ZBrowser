@@ -1,5 +1,6 @@
 package com.zbrowser.app
 
+import android.graphics.Bitmap
 import android.webkit.WebView
 
 /**
@@ -24,7 +25,8 @@ class BrowserTab(
     var url: String = "",
     var webView: WebView? = null,
     var isDesktopMode: Boolean = false,
-    var needsWebViewRecreation: Boolean = false
+    var needsWebViewRecreation: Boolean = false,
+    var favicon: Bitmap? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

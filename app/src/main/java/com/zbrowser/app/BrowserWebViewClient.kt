@@ -47,6 +47,7 @@ class BrowserWebViewClient(
         fun onSslError(handler: SslErrorHandler, error: SslError)
         fun onPopupBlocked()
         fun onRenderProcessGone(webView: WebView)
+        fun onFaviconReceived(webView: WebView?, icon: Bitmap) {}
     }
 
     var callback: Callback? = null
@@ -178,6 +179,15 @@ class BrowserWebViewClient(
         }
     }
 
+    override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+        super.onReceivedIcon(view, icon)
+        val tab = tabLookup(view)
+        if (tab != null && icon != null) {
+            tab.favicon = icon
+            callback?.onFaviconReceived(view, icon)
+        }
+    }
+
     override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
         if (handler != null && error != null) {
             callback?.onSslError(handler, error)
@@ -225,7 +235,7 @@ class BrowserWebViewClient(
             if (desktopMode) {
                 settings.userAgentString = DESKTOP_USER_AGENT
                 settings.useWideViewPort = true
-                settings.loadWithOverviewMode = false
+                settings.loadWithOverviewMode = true
             } else {
                 settings.userAgentString = mobileUserAgent ?: settings.userAgentString
                 settings.useWideViewPort = true
