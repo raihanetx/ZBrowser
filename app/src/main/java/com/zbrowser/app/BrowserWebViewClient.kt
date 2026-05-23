@@ -47,7 +47,6 @@ class BrowserWebViewClient(
         fun onSslError(handler: SslErrorHandler, error: SslError)
         fun onPopupBlocked()
         fun onRenderProcessGone(webView: WebView)
-        fun onFaviconReceived(webView: WebView?, icon: Bitmap) {}
     }
 
     var callback: Callback? = null
@@ -176,15 +175,6 @@ class BrowserWebViewClient(
             if (view != null) {
                 callback?.onPageLoadError(view, errorMsg, pageUrl)
             }
-        }
-    }
-
-    override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
-        super.onReceivedIcon(view, icon)
-        val tab = tabLookup(view)
-        if (tab != null && icon != null) {
-            tab.favicon = icon
-            callback?.onFaviconReceived(view, icon)
         }
     }
 

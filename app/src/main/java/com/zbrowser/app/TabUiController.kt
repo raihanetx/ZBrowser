@@ -3,7 +3,6 @@ package com.zbrowser.app
 import android.annotation.SuppressLint
 import android.content.ComponentCallbacks2
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.drawable.GradientDrawable
 import android.os.Message
 import android.view.Gravity
@@ -13,7 +12,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -47,7 +45,7 @@ class TabUiController(
 
     private val lifecycleScope get() = activity.lifecycleScope
 
-    fun createTabView(title: String, favicon: Bitmap? = null): View {
+    fun createTabView(title: String): View {
         val density = activity.resources.displayMetrics.density
 
         val container = LinearLayout(activity).apply {
@@ -60,21 +58,23 @@ class TabUiController(
             setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
             background = GradientDrawable().apply {
                 setStroke((1 * density).toInt(), ContextCompat.getColor(activity, R.color.text_secondary))
-                cornerRadius = (6 * density).toInt()
+                cornerRadius = (6 * density)
                 setColor(ContextCompat.getColor(activity, android.R.color.transparent))
             }
         }
 
-        val iconView = ImageView(activity).apply {
-            layoutParams = ViewGroup.LayoutParams((16 * density).toInt(), (16 * density).toInt())
-            if (favicon != null) {
-                setImageBitmap(favicon)
-            } else {
-                setImageDrawable(ContextCompat.getDrawable(activity, android.R.drawable.ic_menu_compass))
+        val letterView = TextView(activity).apply {
+            layoutParams = ViewGroup.LayoutParams((22 * density).toInt(), (22 * density).toInt())
+            gravity = Gravity.CENTER
+            text = if (title.isNotEmpty()) title.first().uppercase() else "N"
+            textSize = 10f
+            setTextColor(ContextCompat.getColor(activity, android.R.color.white))
+            background = GradientDrawable().apply {
+                setColor(ContextCompat.getColor(activity, R.color.colorPrimary))
+                cornerRadius = (11 * density)
             }
-            scaleType = ImageView.ScaleType.FIT_CENTER
         }
-        container.addView(iconView)
+        container.addView(letterView)
 
         val space = View(activity).apply {
             layoutParams = ViewGroup.LayoutParams((4 * density).toInt(), 0)
@@ -95,20 +95,6 @@ class TabUiController(
         container.addView(titleView)
 
         return container
-    }
-
-    private fun updateTabView(tabIndex: Int, title: String, favicon: Bitmap? = null) {
-        if (tabIndex < 0 || tabIndex >= binding.tabLayout.tabCount) return
-        val tab = binding.tabLayout.getTabAt(tabIndex) ?: return
-        tab.customView = createTabView(title, favicon)
-    }
-
-    fun updateTabFavicon(webView: WebView, icon: Bitmap) {
-        val tab = tabManager.getTabForWebView(webView) ?: return
-        val idx = tabManager.indexOf(tab)
-        if (idx >= 0) {
-            updateTabView(idx, tab.title, icon)
-        }
     }
 
     fun setupTabLayout() {
