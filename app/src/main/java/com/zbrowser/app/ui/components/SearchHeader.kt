@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,17 @@ fun SearchHeader(
     val focusManager = LocalFocusManager.current
     var isFocused by remember { mutableStateOf(false) }
 
+    // Request focus when entering search mode
+    LaunchedEffect(isSearchMode) {
+        if (isSearchMode) {
+            try {
+                focusRequester.requestFocus()
+            } catch (e: Exception) {
+                // FocusRequester not yet attached, ignore
+            }
+        }
+    }
+
     // Animated border color based on state
     val borderColor by animateColorAsState(
         targetValue = when {
@@ -102,7 +114,6 @@ fun SearchHeader(
                 )
                 .clickable {
                     onSearchModeChange(true)
-                    focusRequester.requestFocus()
                 }
                 .padding(horizontal = AuraDimensions.SearchBarPaddingHorizontal),
             contentAlignment = Alignment.CenterStart
