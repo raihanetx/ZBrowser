@@ -1,5 +1,10 @@
 package com.zbrowser.app.ui
 
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,7 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.zbrowser.app.ui.components.EdgeIndicator
 import com.zbrowser.app.ui.components.MenuItem
 import com.zbrowser.app.ui.components.MenuSheet
@@ -44,19 +51,23 @@ import com.zbrowser.app.ui.theme.AuraDimensions
 
 /**
  * Main Aura Browser screen composable.
- * Composes all UI components together.
+ * Composes all UI components together with actual WebView functionality.
  */
 @Composable
 fun AuraBrowserScreen(
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     // State management
     var url by remember { mutableStateOf("") }
+    var currentUrl by remember { mutableStateOf("") }
     var isSearchMode by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var isNavBarVisible by remember { mutableStateOf(false) }
     var isMenuSheetVisible by remember { mutableStateOf(false) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
 
     // Mock data
     val tabs = remember {
@@ -79,7 +90,11 @@ fun AuraBrowserScreen(
 
     val menuItems = remember {
         listOf(
-            MenuItem(id = "home", label = "Home", icon = Icons.Default.Home) { },
+            MenuItem(id = "home", label = "Home", icon = Icons.Default.Home) {
+                webView?.loadUrl("https://www.google.com")
+                url = "https://www.google.com"
+                currentUrl = "https://www.google.com"
+            },
             MenuItem(id = "history", label = "History", icon = Icons.Default.History) { },
             MenuItem(id = "downloads", label = "Downloads", icon = Icons.Default.SaveAlt) { },
             MenuItem(id = "private", label = "Private", icon = Icons.Default.PrivateConnectivity) { },
@@ -88,6 +103,30 @@ fun AuraBrowserScreen(
             MenuItem(id = "print", label = "Print", icon = Icons.Default.Print) { },
             MenuItem(id = "settings", label = "Settings", icon = Icons.Default.Settings) { }
         )
+    }
+
+    // Function to handle search
+    fun handleSearch(query: String) {
+        if (query.isEmpty()) return
+
+        isLoading = true
+        progress = 0.3f
+
+        // Check if it's a URL or search query
+        val urlToLoad = if (query.startsWith("http://") || query.startsWith("https://")) {
+            query
+        } else if (query.contains(".") && !query.contains(" ")) {
+            // Likely a URL without protocol
+            "https://$query"
+        } else {
+            // Search query - use Google search
+            "https://www.google.com/search?q=${query.replace(" ", "+")}"
+        }
+
+        url = urlToLoad
+        currentUrl = urlToLoad
+        webView?.loadUrl(urlToLoad)
+        isSearchMode = false
     }
 
     // Responsive layout detection
@@ -133,10 +172,7 @@ fun AuraBrowserScreen(
                 isSearchMode = isSearchMode,
                 onUrlChange = { url = it },
                 onSearch = { searchQuery ->
-                    // Handle search
-                    isLoading = true
-                    // Simulate loading
-                    progress = 0.8f
+                    handleSearch(searchQuery)
                 },
                 onSearchModeChange = { isSearchMode = it },
                 onCopyUrl = { /* Handle copy */ },
@@ -151,20 +187,80 @@ fun AuraBrowserScreen(
                 onSuggestionClick = { suggestion ->
                     url = suggestion.title
                     isSearchMode = false
+                    handleSearch(suggestion.title)
                 },
                 onClearHistory = { /* Handle clear history */ },
                 isVisible = isSearchMode && url.isEmpty()
             )
 
-            // Content area (placeholder)
+            // WebView content area
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .background(AuraColors.Background),
-                contentAlignment = Alignment.Center
+                    .background(AuraColors.Background)
             ) {
-                // Empty state or content would go here
+                // WebView
+                AndroidView(
+                    factory = { context ->
+                        WebView(context).apply {
+                            webView = this
+
+                            // Configure WebView settings
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                setSupportZoom(true)
+                                builtInZoomControls = true
+                                displayZoomControls = false
+                                setSupportMultipleWindows(false)
+                                javaScriptCanOpenWindowsAutomatically = false
+                                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                allowFileAccess = false
+                                allowContentAccess = false
+                                loadsImagesAutomatically = true
+                                cacheMode = WebSettings.LOAD_DEFAULT
+                            }
+
+                            // Set WebViewClient to handle navigation
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(
+                                    view: WebView?,
+                                    request: WebResourceRequest?
+                                ): Boolean {
+                                    val url = request?.url?.toString() ?: return false
+                                    // Allow http and https URLs
+                                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                                        return false // Let WebView handle it
+                                    }
+                                    return true // Block other schemes
+                                }
+
+                                override fun onPageFinished(view: WebView?, pageUrl: String?) {
+                                    super.onPageFinished(view, pageUrl)
+                                    isLoading = false
+                                    progress = 1f
+                                    currentUrl = pageUrl ?: ""
+                                    url = pageUrl ?: ""
+                                }
+                            }
+
+                            // Set WebChromeClient for progress updates
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                    progress = newProgress / 100f
+                                }
+                            }
+
+                            // Load initial URL
+                            loadUrl("https://www.google.com")
+                            url = "https://www.google.com"
+                            currentUrl = "https://www.google.com"
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
 
@@ -179,7 +275,12 @@ fun AuraBrowserScreen(
             tabs = tabs,
             isVisible = isNavBarVisible,
             onTabClick = { tab ->
-                // Handle tab click
+                // Handle tab click - load the tab's URL
+                if (tab.url.isNotEmpty() && tab.url != "home") {
+                    webView?.loadUrl(tab.url)
+                    url = tab.url
+                    currentUrl = tab.url
+                }
                 isNavBarVisible = false
             },
             onNewTabClick = {
@@ -191,6 +292,9 @@ fun AuraBrowserScreen(
                         url = ""
                     )
                 )
+                webView?.loadUrl("https://www.google.com")
+                url = "https://www.google.com"
+                currentUrl = "https://www.google.com"
                 isNavBarVisible = false
             },
             onDismiss = { isNavBarVisible = false }
