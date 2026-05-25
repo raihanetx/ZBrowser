@@ -8,6 +8,8 @@ import android.view.KeyEvent
 import android.webkit.SslErrorHandler
 import android.webkit.WebView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -17,6 +19,8 @@ import com.google.android.material.tabs.TabLayout
 import com.zbrowser.app.data.BookmarkDao
 import com.zbrowser.app.data.HistoryDao
 import com.zbrowser.app.databinding.ActivityMainBinding
+import com.zbrowser.app.ui.AuraBrowserScreen
+import com.zbrowser.app.ui.theme.AuraTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -82,8 +86,13 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+
+        // Set Compose content with Aura Theme
+        setContent {
+            AuraTheme {
+                AuraBrowserScreen()
+            }
+        }
 
         // PermissionManager needs Activity reference — created here, not injected
         permissionManager = PermissionManager(this)
@@ -115,12 +124,6 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
             navigationController = navigationController,
             tabUiController = tabUiController
         )
-
-        setupToolbar()
-        navigationController.setupUrlBar()
-        setupBottomBar()
-        navigationController.setupSwipeRefresh()
-        tabUiController.setupTabLayout()
 
         // Check for crash logs from previous session
         browserMenuController.checkForCrash()

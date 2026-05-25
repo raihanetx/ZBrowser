@@ -118,33 +118,33 @@ jobs:
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        # M8 FIX: Version tag now matches app version (4.0)
-        tag_name: v4.0.${{ github.run_number }}
-        name: ZBrowser v4.0.${{ github.run_number }}
+        tag_name: v4.1.1.${{ github.run_number }}
+        name: ZBrowser v4.1.1.${{ github.run_number }}
         body: |
-          ## ZBrowser v4.0 - Production-Ready Android Browser
+          ## ZBrowser v4.1.1 - Aura Browser UI Redesign
 
           Built from commit: ${{ github.sha }}
 
-          ### v4.0 Bug Fixes & Improvements
-          - **CRITICAL**: Fixed WebViewPool.init() compilation error
-          - **CRITICAL**: Fixed AdBlocker CSS injection JavaScript syntax error
-          - **CRITICAL**: Fixed WebViewPool release/destroy order (memory leak)
-          - **CRITICAL**: Fixed onTrimMemory blank screen after memory pressure
-          - **HIGH**: Fixed closeTab order-of-operations bug
-          - **HIGH**: Fixed handleNewWindow bare WebView (now uses full features)
-          - **HIGH**: Fixed restoreTabs nextTabId collision
-          - **HIGH**: Fixed animateProgress race condition
-          - **HIGH**: Removed fallbackToDestructiveMigration (data loss prevention)
-          - **HIGH**: CrashReporter init now runs before WebViewPool
-          - **MEDIUM**: PermissionManager supports concurrent requests
-          - **MEDIUM**: Bookmarks/History dialogs show URL for disambiguation
-          - **MEDIUM**: Added file upload support (<input type="file">)
-          - **MEDIUM**: Fixed BookmarkEntity primary key (URL-based, no duplicate issue)
-          - **MEDIUM**: CrashReporter writes on separate thread
-          - **LOW**: Close All tabs confirmation dialog
-          - **LOW**: Exit confirmation on back press
-          - **LOW**: Added proguard keep for BuildConfig
+          ### v4.1.1 UI Transformation
+          - **MAJOR**: Complete UI redesign with Jetpack Compose
+          - **MAJOR**: New "Aura Browser" design language
+          - **MAJOR**: Apple-inspired color scheme (#F5F5F7 + Purple accents)
+          - **MAJOR**: Pill-shaped search bar (44dp height, 26dp radius)
+          - **MAJOR**: Slide-in purple navigation bar from right edge
+          - **MAJOR**: Circular tab icons (38dp) with active indicators
+          - **MAJOR**: Animated purple gradient progress bar (2dp)
+          - **MAJOR**: Suggestions panel with Recent/Trending/Suggestions sections
+          - **MAJOR**: Pulsing edge indicator for swipe gesture
+          - **MAJOR**: Bottom sheet menu with 4x2 grid layout
+          - **MAJOR**: Responsive tablet layout (≥500dp width)
+          - **HIGH**: Smooth animations (600ms progress, 350ms nav bar slide)
+          - **HIGH**: Gesture-based navigation (right-edge swipe)
+          - **HIGH**: Material 3 theming with custom color palette
+          - **HIGH**: Typography system matching design specs
+          - **MEDIUM**: All existing browser features preserved
+          - **MEDIUM**: WebView pool, ad blocker, tab management intact
+          - **MEDIUM**: Hilt dependency injection maintained
+          - **MEDIUM**: Room database for bookmarks/history
 
           ### Downloads
           - **ZBrowser-debug.apk** - Debug build for testing
