@@ -34,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -43,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 import com.zbrowser.app.ui.theme.AuraTypography
+import kotlinx.coroutines.delay
 
 /**
  * SearchHeader component - Pill-shaped search bar at the top of the screen.
@@ -63,10 +63,12 @@ fun SearchHeader(
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     var isFocused by remember { mutableStateOf(false) }
+    var isTextFieldReady by remember { mutableStateOf(false) }
 
-    // Request focus when entering search mode
-    LaunchedEffect(isSearchMode) {
-        if (isSearchMode) {
+    // Request focus when entering search mode and text field is ready
+    LaunchedEffect(isSearchMode, isTextFieldReady) {
+        if (isSearchMode && isTextFieldReady) {
+            delay(100) // Small delay to ensure text field is fully composed
             try {
                 focusRequester.requestFocus()
             } catch (e: Exception) {
@@ -113,7 +115,9 @@ fun SearchHeader(
                     shape = RoundedCornerShape(AuraDimensions.SearchBarCornerRadius)
                 )
                 .clickable {
-                    onSearchModeChange(true)
+                    if (!isSearchMode) {
+                        onSearchModeChange(true)
+                    }
                 }
                 .padding(horizontal = AuraDimensions.SearchBarPaddingHorizontal),
             contentAlignment = Alignment.CenterStart
@@ -128,6 +132,7 @@ fun SearchHeader(
                         .focusRequester(focusRequester)
                         .onFocusChanged { focusState ->
                             isFocused = focusState.isFocused
+                            isTextFieldReady = true
                             if (!focusState.isFocused) {
                                 onSearchModeChange(false)
                             }
