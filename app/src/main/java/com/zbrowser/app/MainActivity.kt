@@ -87,6 +87,9 @@ class MainActivity : AppCompatActivity(), BrowserWebViewClient.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Initialize binding for backward compatibility with existing controllers
+        binding = ActivityMainBinding.inflate(layoutInflater)
+
         // Set Compose content with Aura Theme
         setContent {
             AuraTheme {
