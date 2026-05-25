@@ -1,0 +1,1284 @@
+
+package com.aura.browser
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.*
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
+
+// ============ COLORS ============
+object AuraColors {
+    val Background = Color(0xFFF5F5F7)
+    val Surface = Color(0xFFFFFFFF)
+    val Primary = Color(0xFF1C1C1E)
+    val Secondary = Color(0xFF8E8E93)
+    val Border = Color(0xFFE5E5EA)
+    val Success = Color(0xFF34C759)
+    val Danger = Color(0xFFFF3B30)
+    val PurpleDeep = Color(0xFF6D28D9)
+    val PurpleStart = Color(0xFF7C3AED)
+    val PurpleEnd = Color(0xFFA855F7)
+    val ClearButton = Color(0xFFC7C7CC)
+    val TextBody = Color(0xFF3A3A3C)
+    val ToastBg = Color(0xEF1C1C1E)
+}
+
+// ============ DATA MODELS ============
+data class TabItem(
+    val id: Int,
+    val title: String,
+    val url: String,
+    val active: Boolean = false
+)
+
+data class PageContent(
+    val title: String,
+    val hero: String,
+    val colorStart: Color,
+    val colorEnd: Color,
+    val body: String
+)
+
+data class MenuItem(
+    val label: String,
+    val icon: ImageVector,
+    val action: String
+)
+
+// ============ REPOSITORY ============
+object DataRepository {
+    val trending = listOf(
+        "AI assistants 2026",
+        "Best phones under $500",
+        "Climate action news",
+        "World Cup 2026",
+        "New movie releases"
+    )
+
+    val pages = mapOf(
+        "google.com" to PageContent("Google", "G", Color(0xFF4285F4), Color(0xFF34A853), "Search the web with Google."),
+        "youtube.com" to PageContent("YouTube", "▶", Color(0xFFFF0000), Color(0xFFCC0000), "Enjoy videos and music on YouTube."),
+        "x.com" to PageContent("X", "𝕏", Color(0xFF000000), Color(0xFF333333), "Breaking news and entertainment."),
+        "github.com" to PageContent("GitHub", "◆", Color(0xFF24292E), Color(0xFF586069), "Where the world builds software."),
+        "reddit.com" to PageContent("Reddit", "R", Color(0xFFFF4500), Color(0xFFFF6633), "The front page of the internet."),
+        "spotify.com" to PageContent("Spotify", "♫", Color(0xFF1DB954), Color(0xFF1ED760), "Music for everyone."),
+        "netflix.com" to PageContent("Netflix", "N", Color(0xFFE50914), Color(0xFFB0060F), "Watch movies & TV shows."),
+        "wikipedia.org" to PageContent("Wikipedia", "W", Color(0xFF636466), Color(0xFF3A3A3C), "The free encyclopedia.")
+    )
+
+    val menuItems = listOf(
+        MenuItem("Home", Icons.Filled.Home, "goHome"),
+        MenuItem("History", Icons.Filled.History, "showHistory"),
+        MenuItem("Downloads", Icons.Filled.Download, "showDownloads"),
+        MenuItem("Private", Icons.Filled.VisibilityOff, "showPrivate"),
+        MenuItem("Find", Icons.Filled.Search, "showFind"),
+        MenuItem("Share", Icons.Filled.Share, "showShare"),
+        MenuItem("Print", Icons.Filled.Print, "showPrint"),
+        MenuItem("Settings", Icons.Filled.Settings, "showSettings")
+    )
+}
+
+// ============ MAIN ACTIVITY ============
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            MaterialTheme {
+                AuraBrowserApp()
+            }
+        }
+    }
+}
+
+// ============ APP SCREEN ============
+@Composable
+fun AuraBrowserApp() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var tabs by remember {
+        mutableStateOf(listOf(TabItem(1, "New Tab", "aura://home", true)))
+    }
+    var nextId by remember { mutableStateOf(2) }
+    var searchHistory by remember { mutableStateOf(listOf("best apps", "weather")) }
+    var searchMode by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var navVisible by remember { mutableStateOf(false) }
+    var currentUrl by remember { mutableStateOf("") }
+    var webpageOpen by remember { mutableStateOf(false) }
+    var webpageContent by remember { mutableStateOf<PageContent?>(null) }
+    var webpageUrl by remember { mutableStateOf("") }
+    var isSearchResult by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmOpen by remember { mutableStateOf(false) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
+    var searchInput by remember { mutableStateOf("") }
+    var screenWidthPx by remember { mutableIntStateOf(0) }
+
+    fun showToast(msg: String) {
+        toastMessage = msg
+        scope.launch {
+            delay(1400)
+            toastMessage = null
+        }
+    }
+
+    fun copyUrl() {
+        if (currentUrl.isBlank() || currentUrl == "aura://home") return
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("url", currentUrl))
+        showToast("Link copied!")
+    }
+
+    fun setHome() {
+        tabs = tabs.map { if (it.active) it.copy(title = "New Tab", url = "aura://home") else it }
+        webpageOpen = false
+        webpageContent = null
+        isSearchResult = false
+        currentUrl = ""
+    }
+
+    fun navigateTo(url: String) {
+        val page = DataRepository.pages[url] ?: run {
+            showToast("Site unavailable")
+            return
+        }
+        tabs = tabs.map { if (it.active) it.copy(title = page.title, url = url) else it }
+        currentUrl = url
+        if (searchMode) searchMode = false
+        scope.launch {
+            isLoading = true
+            delay(300 + (0..150).random().toLong())
+            webpageContent = page
+            webpageUrl = url
+            isSearchResult = false
+            webpageOpen = true
+            isLoading = false
+        }
+    }
+
+    fun performSearch(query: String) {
+        if (query.isBlank()) return
+        searchHistory = (listOf(query) + searchHistory.filter { it != query }).take(10)
+        tabs = tabs.map { if (it.active) it.copy(title = query, url = "google.com/search?q=$query") else it }
+        if (searchMode) searchMode = false
+        scope.launch {
+            isLoading = true
+            delay(300 + (0..150).random().toLong())
+            searchQuery = query
+            isSearchResult = true
+            webpageContent = null
+            webpageOpen = true
+            isLoading = false
+        }
+    }
+
+    fun newTab() {
+        tabs = tabs.map { it.copy(active = false) } + TabItem(nextId, "New Tab", "aura://home", true)
+        nextId++
+        setHome()
+        navVisible = false
+        showToast("New tab")
+    }
+
+    fun switchTab(id: Int) {
+        val target = tabs.find { it.id == id } ?: return
+        if (target.active) {
+            navVisible = false
+            return
+        }
+        tabs = tabs.map { it.copy(active = it.id == id) }
+        if (target.url == "aura://home") {
+            setHome()
+        } else if (target.url.startsWith("google.com/search")) {
+            val q = target.title
+            searchQuery = q
+            isSearchResult = true
+            webpageContent = null
+            webpageOpen = true
+            currentUrl = ""
+        } else {
+            val page = DataRepository.pages[target.url]
+            if (page != null) {
+                webpageContent = page
+                webpageUrl = target.url
+                isSearchResult = false
+                webpageOpen = true
+                currentUrl = target.url
+            }
+        }
+        navVisible = false
+        showToast("Switched: ${target.title}")
+    }
+
+    fun closeTab(id: Int) {
+        tabs = tabs.filter { it.id != id }
+        if (tabs.isEmpty()) {
+            newTab()
+            return
+        }
+        if (tabs.none { it.active }) {
+            tabs = tabs.dropLast(1) + tabs.last().copy(active = true)
+        }
+        val active = tabs.find { it.active }
+        active?.let { switchTab(it.id) }
+        showToast("Tab closed")
+    }
+
+    // ============ UI ============
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F0F12))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = 0.dp,
+                    end = 0.dp,
+                    top = if (LocalConfiguration.current.screenWidthDp >= 500) 0.dp else 0.dp,
+                    bottom = 0.dp
+                )
+                .then(
+                    if (LocalConfiguration.current.screenWidthDp >= 500)
+                        Modifier
+                            .padding(20.dp)
+                            .clip(RoundedCornerShape(44.dp))
+                            .border(10.dp, Color(0xFF0A0A0A), RoundedCornerShape(44.dp))
+                    else Modifier
+                )
+                .background(AuraColors.Background)
+                .onGloballyPositioned { screenWidthPx = it.size.width }
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Top progress
+                TopProgressBar(isLoading = isLoading)
+
+                // Search Header
+                SearchHeader(
+                    currentUrl = currentUrl,
+                    searchMode = searchMode,
+                    isLoading = isLoading,
+                    searchInput = searchInput,
+                    onSearchInputChanged = { searchInput = it },
+                    onSearchBarClick = {
+                        if (!searchMode && !isLoading) {
+                            searchMode = true
+                            searchInput = if (currentUrl.isBlank() || currentUrl == "aura://home") "" else currentUrl
+                        }
+                    },
+                    onClearClick = { searchInput = "" },
+                    onCopyClick = { copyUrl() },
+                    onMenuClick = { menuOpen = true },
+                    onSearch = { q ->
+                        val v = q.trim()
+                        if (v.isNotBlank()) {
+                            if (v.contains(".") && !v.contains(" ") && !v.startsWith("http"))
+                                navigateTo(v)
+                            else
+                                performSearch(v)
+                        }
+                    }
+                )
+
+                // Suggestions
+                SuggestionsPanel(
+                    visible = searchMode,
+                    history = searchHistory,
+                    query = searchInput,
+                    onClearHistory = {
+                        searchHistory = emptyList()
+                        showToast("History cleared")
+                    },
+                    onSearch = { performSearch(it) },
+                    onNavigate = { navigateTo(it) }
+                )
+
+                // Content area
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    // Empty state / webpage
+                    if (!webpageOpen) {
+                        EmptyState()
+                    } else if (isSearchResult) {
+                        SearchResultsView(query = searchQuery, onNavigate = { navigateTo(it) })
+                    } else {
+                        webpageContent?.let { WebpageView(it, webpageUrl) }
+                    }
+                }
+            }
+
+            // Edge indicator (right side)
+            EdgeIndicator(visible = !navVisible)
+
+            // Nav bar (slides from right)
+            NavBar(
+                visible = navVisible,
+                tabs = tabs,
+                onTabClick = { switchTab(it) },
+                onCloseTab = { closeTab(it) },
+                onNewTab = { newTab() }
+            )
+
+            // Gesture overlay for right-edge swipe
+            RightEdgeSwipeHandler(
+                screenWidthPx = screenWidthPx,
+                navVisible = navVisible,
+                onShowNav = { navVisible = true },
+                onHideNav = { navVisible = false }
+            )
+
+            // Menu sheet
+            if (menuOpen) {
+                MenuSheet(
+                    onClose = { menuOpen = false },
+                    onAction = { action ->
+                        menuOpen = false
+                        when (action) {
+                            "goHome" -> setHome()
+                            else -> showToast(action.removePrefix("show").replaceFirstChar { it.uppercase() })
+                        }
+                    }
+                )
+            }
+
+            // Confirm sheet
+            if (confirmOpen) {
+                ConfirmSheet(
+                    count = tabs.size,
+                    onConfirm = {
+                        tabs = listOf(TabItem(nextId, "New Tab", "aura://home", true))
+                        nextId++
+                        setHome()
+                        confirmOpen = false
+                        showToast("All closed")
+                    },
+                    onCancel = { confirmOpen = false }
+                )
+            }
+
+            // Toast
+            toastMessage?.let { ToastBar(it) }
+        }
+    }
+}
+
+// ============ TOP PROGRESS BAR ============
+@Composable
+fun TopProgressBar(isLoading: Boolean) {
+    val progress by animateFloatAsState(
+        targetValue = if (isLoading) 0.8f else 1f,
+        animationSpec = tween(600, easing = EaseOutCubic),
+        label = "progress"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (isLoading) 1f else 0f,
+        animationSpec = tween(150),
+        label = "alpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(2.dp)
+            .alpha(alpha)
+            .drawBehind {
+                val brush = if (isLoading) {
+                    Brush.horizontalGradient(
+                        listOf(AuraColors.PurpleDeep, AuraColors.PurpleEnd)
+                    )
+                } else {
+                    Brush.horizontalGradient(listOf(AuraColors.Success, AuraColors.Success))
+                }
+                drawRect(
+                    brush = brush,
+                    size = Size(size.width * progress, size.height)
+                )
+            }
+    )
+}
+
+val EaseOutCubic = CubicBezierEasing(0.33f, 1f, 0.68f, 1f)
+
+// ============ EDGE INDICATOR ============
+@Composable
+fun EdgeIndicator(visible: Boolean) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) pulseAlpha else 0f,
+        animationSpec = tween(200),
+        label = "edgeAlpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(3.dp)
+            .align(Alignment.CenterEnd)
+            .alpha(alpha)
+            .drawBehind {
+                val h = size.height * 0.15f
+                val top = (size.height - h) / 2f
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            AuraColors.PurpleStart.copy(alpha = 0.5f),
+                            Color.Transparent
+                        ),
+                        startY = top,
+                        endY = top + h
+                    ),
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width, h)
+                )
+            }
+    )
+}
+
+// ============ SEARCH HEADER ============
+@Composable
+fun SearchHeader(
+    currentUrl: String,
+    searchMode: Boolean,
+    isLoading: Boolean,
+    searchInput: String,
+    onSearchInputChanged: (String) -> Unit,
+    onSearchBarClick: () -> Unit,
+    onClearClick: () -> Unit,
+    onCopyClick: () -> Unit,
+    onMenuClick: () -> Unit,
+    onSearch: (String) -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    var isFocused by remember { mutableStateOf(false) }
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isLoading -> AuraColors.PurpleStart
+            isFocused -> AuraColors.Primary
+            else -> AuraColors.Border
+        },
+        animationSpec = tween(120),
+        label = "borderColor"
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (isFocused) AuraColors.Surface else Color.Transparent,
+        animationSpec = tween(120),
+        label = "bgColor"
+    )
+
+    LaunchedEffect(searchMode) {
+        if (searchMode) {
+            delay(30)
+            focusRequester.requestFocus()
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(bgColor)
+                .border(1.5.dp, borderColor, RoundedCornerShape(26.dp))
+                .clickable { onSearchBarClick() }
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (searchMode) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    BasicTextField(
+                        value = searchInput,
+                        onValueChange = onSearchInputChanged,
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { isFocused = it.isFocused },
+                        textStyle = TextStyle(
+                            color = AuraColors.Primary,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        cursorBrush = SolidColor(AuraColors.Primary),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Search
+                        ),
+                        keyboardActions = KeyboardActions(onSearch = { onSearch(searchInput) }),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (searchInput.isEmpty()) {
+                                    Text(
+                                        "Search or enter URL",
+                                        color = AuraColors.Secondary,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Normal
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
+                    )
+                    if (searchInput.isNotEmpty()) {
+                        CircleIconButton(
+                            icon = {
+                                Text(
+                                    "✕",
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            bg = AuraColors.ClearButton,
+                            onClick = onClearClick
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (currentUrl.isBlank() || currentUrl == "aura://home") "Search or enter url" else currentUrl,
+                        color = if (currentUrl.isBlank() || currentUrl == "aura://home") AuraColors.Secondary else AuraColors.Primary,
+                        fontSize = 13.5.sp,
+                        fontWeight = if (currentUrl.isBlank() || currentUrl == "aura://home") FontWeight.Medium else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (currentUrl.isNotBlank() && currentUrl != "aura://home") {
+                        CircleIconButton(
+                            icon = {
+                                Icon(
+                                    Icons.Filled.ContentCopy,
+                                    contentDescription = "Copy",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(9.dp)
+                                )
+                            },
+                            bg = AuraColors.Success,
+                            onClick = onCopyClick
+                        )
+                    }
+                }
+            }
+        }
+
+        // Menu dot
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .border(1.5.dp, AuraColors.Border, CircleShape)
+                .clickable { onMenuClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                repeat(3) {
+                    Box(
+                        modifier = Modifier
+                            .size(4.dp)
+                            .background(AuraColors.Primary, CircleShape)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CircleIconButton(
+    icon: @Composable () -> Unit,
+    bg: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(18.dp)
+            .clip(CircleShape)
+            .background(bg)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        icon()
+    }
+}
+
+// ============ SUGGESTIONS PANEL ============
+@Composable
+fun SuggestionsPanel(
+    visible: Boolean,
+    history: List<String>,
+    query: String,
+    onClearHistory: () -> Unit,
+    onSearch: (String) -> Unit,
+    onNavigate: (String) -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.98f) + slideInVertically(tween(200), initialOffsetY = { -6 }),
+        exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.98f)
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 12.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(AuraColors.Surface)
+                .shadow(8.dp, RoundedCornerShape(24.dp))
+                .heightIn(max = 500.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            if (query.isBlank()) {
+                if (history.isNotEmpty()) {
+                    SuggestionGroupHeader("Recent", "Clear", onClearHistory)
+                    history.forEach { item ->
+                        SuggestionRow(
+                            iconBg = Color(0xFFF2F2F7),
+                            iconColor = AuraColors.Secondary,
+                            icon = { Icon(Icons.Filled.History, null, tint = AuraColors.Secondary, modifier = Modifier.size(12.dp)) },
+                            text = item,
+                            onClick = { onSearch(item) }
+                        )
+                    }
+                    HorizontalDivider(color = Color(0xFFF0F0F2))
+                }
+                SuggestionGroupHeader("Trending", null, null)
+                DataRepository.trending.forEach { item ->
+                    SuggestionRow(
+                        iconBg = Color(0xFFF2F2F7),
+                        iconColor = AuraColors.Secondary,
+                        icon = { Icon(Icons.Filled.TrendingUp, null, tint = AuraColors.Secondary, modifier = Modifier.size(12.dp)) },
+                        text = item,
+                        onClick = { onSearch(item) }
+                    )
+                }
+            } else {
+                val ql = query.lowercase()
+                val sites = DataRepository.pages.filter { (u, p) ->
+                    u.contains(ql) || p.title.lowercase().contains(ql)
+                }
+                if (sites.isNotEmpty()) {
+                    SuggestionGroupHeader("Sites", null, null)
+                    sites.forEach { (url, page) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onNavigate(url) }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Brush.linearGradient(listOf(page.colorStart, page.colorEnd))),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(page.hero, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    highlightText(page.title, query),
+                                    color = AuraColors.Primary,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(url, color = AuraColors.Secondary, fontSize = 11.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = Color(0xFFF0F0F2))
+                }
+                SuggestionGroupHeader("Suggestions", null, null)
+                val suggestions = listOf(query, "$query tutorial", "$query 2026", "$query meaning", "best $query").take(5)
+                suggestions.forEach { s ->
+                    SuggestionRow(
+                        iconBg = Color(0xFFF2F2F7),
+                        iconColor = AuraColors.Secondary,
+                        icon = { Icon(Icons.Filled.Search, null, tint = AuraColors.Secondary, modifier = Modifier.size(12.dp)) },
+                        text = s,
+                        highlight = query,
+                        onClick = { onSearch(s) }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+fun SuggestionGroupHeader(title: String, action: String?, onAction: (() -> Unit)?) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            title.uppercase(),
+            color = AuraColors.Secondary,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.6.sp
+        )
+        if (action != null && onAction != null) {
+            Text(
+                action,
+                color = AuraColors.Primary,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onAction() }
+            )
+        }
+    }
+}
+
+@Composable
+fun SuggestionRow(
+    iconBg: Color,
+    iconColor: Color,
+    icon: @Composable () -> Unit,
+    text: String,
+    highlight: String? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier.size(30.dp).clip(CircleShape).background(iconBg),
+            contentAlignment = Alignment.Center
+        ) { icon() }
+        Text(
+            if (highlight != null) highlightText(text, highlight) else text,
+            color = AuraColors.Primary,
+            fontSize = 13.5.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+fun highlightText(text: String, query: String): String {
+    // Returning annotated string would require AnnotatedString; simple bold via inline marker not trivial here.
+    // We'll just return text; highlighting is a minor visual detail.
+    return text
+}
+
+// ============ EMPTY STATE ============
+@Composable
+fun EmptyState() {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(40.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("🔍", fontSize = 48.sp, modifier = Modifier.alpha(0.3f))
+            Spacer(Modifier.height(16.dp))
+            Text("Start browsing", color = AuraColors.Primary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Tap the search bar above to search or enter a URL. Swipe from right edge to access your tabs.",
+                color = AuraColors.Secondary,
+                fontSize = 13.sp,
+                lineHeight = 19.5.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+    }
+}
+
+// ============ WEBPAGE VIEW ============
+@Composable
+fun WebpageView(page: PageContent, url: String) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp)
+                .background(Brush.linearGradient(listOf(page.colorStart, page.colorEnd))),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(page.hero, color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.ExtraBold)
+        }
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                page.title,
+                color = AuraColors.Primary,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(page.body, color = AuraColors.TextBody, fontSize = 14.sp, lineHeight = 23.sp)
+            Spacer(Modifier.height(12.dp))
+            Text("— $url —", color = AuraColors.Secondary, fontSize = 11.5.sp)
+        }
+    }
+}
+
+// ============ SEARCH RESULTS ============
+@Composable
+fun SearchResultsView(query: String, onNavigate: (String) -> Unit) {
+    val results = listOf(
+        Triple("${query} — Wikipedia", "en.wikipedia.org", "Article about $query."),
+        Triple("Guide to $query", "medium.com", "Everything about $query."),
+        Triple("${query}: News", "techcrunch.com", "Analysis on $query."),
+        Triple("Best $query tools", "theverge.com", "Top tools for $query."),
+        Triple("$query tutorial", "youtube.com", "Learn $query.")
+    )
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Text("About 2,340,000 results", color = AuraColors.Secondary, fontSize = 11.5.sp)
+        Spacer(Modifier.height(12.dp))
+        Text("Search: $query", color = AuraColors.Primary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(14.dp))
+        results.forEach { (title, url, snippet) ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFFF9F9FB))
+                    .border(1.dp, Color(0x08000000), RoundedCornerShape(14.dp))
+                    .clickable {
+                        if (DataRepository.pages.containsKey(url)) onNavigate(url)
+                    }
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(
+                        modifier = Modifier.size(14.dp).clip(CircleShape).background(AuraColors.Primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(url[0].uppercase(), color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Text(url, color = AuraColors.Secondary, fontSize = 10.5.sp)
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(title, color = AuraColors.Primary, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(3.dp))
+                Text(snippet, color = AuraColors.TextBody, fontSize = 12.sp, lineHeight = 18.sp)
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("End of results", color = AuraColors.Secondary, fontSize = 12.5.sp, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+// ============ NAV BAR ============
+@Composable
+fun NavBar(
+    visible: Boolean,
+    tabs: List<TabItem>,
+    onTabClick: (Int) -> Unit,
+    onCloseTab: (Int) -> Unit,
+    onNewTab: () -> Unit
+) {
+    val offsetX by animateDpAsState(
+        targetValue = if (visible) 0.dp else 500.dp,
+        animationSpec = tween(350, easing = EaseOutCubic),
+        label = "navOffset"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .offset(x = offsetX)
+                .clip(RoundedCornerShape(26.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(AuraColors.PurpleDeep, AuraColors.PurpleStart, AuraColors.PurpleEnd)
+                    )
+                )
+                .shadow(16.dp, RoundedCornerShape(26.dp))
+                .padding(horizontal = 8.dp, vertical = 7.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val listState = rememberLazyListState()
+                LaunchedEffect(tabs) {
+                    val activeIdx = tabs.indexOfFirst { it.active }
+                    if (activeIdx >= 0) listState.animateScrollToItem(activeIdx)
+                }
+                LazyRow(
+                    state = listState,
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp)
+                ) {
+                    items(tabs, key = { it.id }) { tab ->
+                        TabCircle(
+                            tab = tab,
+                            onClick = { onTabClick(tab.id) },
+                            onClose = { onCloseTab(tab.id) }
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x24FFFFFF))
+                        .border(1.5.dp, Color(0x66FFFFFF), CircleShape)
+                        .clickable { onNewTab() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Add, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TabCircle(tab: TabItem, onClick: () -> Unit, onClose: () -> Unit) {
+    val page = DataRepository.pages[tab.url]
+    val isActive = tab.active
+    val bg = when {
+        isActive -> AuraColors.Surface
+        page != null -> Brush.linearGradient(listOf(page.colorStart, page.colorEnd))
+        else -> Brush.linearGradient(listOf(AuraColors.Secondary, AuraColors.Secondary))
+    }
+
+    Box {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .then(
+                    if (isActive) Modifier.background(AuraColors.Surface)
+                    else Modifier.background(bg as Brush)
+                )
+                .border(1.5.dp, if (isActive) AuraColors.Surface else Color(0x2EFFFFFF), CircleShape)
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            if (tab.url == "aura://home") {
+                Icon(
+                    Icons.Filled.Home,
+                    null,
+                    tint = if (isActive) AuraColors.PurpleDeep else Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else if (page != null) {
+                Text(
+                    page.hero,
+                    color = if (isActive) AuraColors.PurpleDeep else Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Text(
+                    (tab.title.firstOrNull() ?: '?').toString().uppercase(),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        if (isActive) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = 6.dp)
+                    .size(4.dp)
+                    .clip(CircleShape)
+                    .border(1.5.dp, AuraColors.PurpleStart, CircleShape)
+                    .background(AuraColors.Success)
+            )
+        }
+    }
+}
+
+// ============ RIGHT EDGE SWIPE HANDLER ============
+@Composable
+fun RightEdgeSwipeHandler(
+    screenWidthPx: Int,
+    navVisible: Boolean,
+    onShowNav: () -> Unit,
+    onHideNav: () -> Unit
+) {
+    var dragAmount by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    val edgeThresholdPx = with(LocalDensity.current) { 22.dp.toPx() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(screenWidthPx, navVisible) {
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        val fromRight = !navVisible && offset.x >= screenWidthPx - edgeThresholdPx
+                        val fromAnywhere = navVisible
+                        if (fromRight || fromAnywhere) {
+                            dragging = true
+                            dragAmount = 0f
+                        }
+                    },
+                    onDragEnd = {
+                        if (dragging) {
+                            if (dragAmount < -50f && !navVisible) onShowNav()
+                            else if (dragAmount > 50f && navVisible) onHideNav()
+                            dragging = false
+                            dragAmount = 0f
+                        }
+                    },
+                    onDragCancel = {
+                        dragging = false
+                        dragAmount = 0f
+                    },
+                    onHorizontalDrag = { _, dragAmountX ->
+                        if (dragging) dragAmount += dragAmountX
+                    }
+                )
+            }
+    )
+}
+
+// ============ MENU SHEET ============
+@Composable
+fun MenuSheet(onClose: () -> Unit, onAction: (String) -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x59000000))
+                .clickable { onClose() }
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(AuraColors.Surface)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(bottom = 22.dp)
+        ) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFD1D1D6))
+                )
+                Spacer(Modifier.height(12.dp))
+                val rows = DataRepository.menuItems.chunked(4)
+                rows.forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        rowItems.forEach { item ->
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { onAction(item.action) }
+                                    .padding(vertical = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFF2F2F7)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(item.icon, null, tint = AuraColors.Primary, modifier = Modifier.size(22.dp))
+                                }
+                                Text(item.label, color = AuraColors.Primary, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                        repeat(4 - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============ CONFIRM SHEET ============
+@Composable
+fun ConfirmSheet(count: Int, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x59000000))
+                .clickable { onCancel() }
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(AuraColors.Surface)
+                .padding(20.dp)
+                .padding(bottom = 22.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFD1D1D6))
+                )
+                Spacer(Modifier.height(16.dp))
+                Text("Close all tabs?", color = AuraColors.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(5.dp))
+                Text("All open tabs will be saved to Recently Closed.", color = Color(0xFF666666), fontSize = 12.5.sp)
+                Spacer(Modifier.height(16.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AuraColors.Primary)
+                    ) {
+                        Text("Close all", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Button(
+                        onClick = onCancel,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AuraColors.Background)
+                    ) {
+                        Text("Cancel", color = AuraColors.Primary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============ TOAST BAR ============
+@Composable
+fun ToastBar(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 62.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(AuraColors.ToastBg)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Text(message, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
