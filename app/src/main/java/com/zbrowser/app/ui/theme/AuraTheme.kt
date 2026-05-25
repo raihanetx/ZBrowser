@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * Aura Browser theme configuration.
- * Uses Material 3 with custom color palette based on Apple's design system.
+ * Uses Material 3 with custom color palette based on gray color scheme.
  */
 private val LightColorScheme = lightColorScheme(
     background = AuraColors.Background,
@@ -23,8 +23,8 @@ private val LightColorScheme = lightColorScheme(
     outlineVariant = AuraColors.BorderLight,
     error = AuraColors.Danger,
     onError = Color.White,
-    primaryContainer = AuraColors.PurpleLight,
-    onPrimaryContainer = AuraColors.PurpleDeep
+    primaryContainer = AuraColors.GrayLighter,
+    onPrimaryContainer = AuraColors.GrayDark
 )
 
 @Composable

@@ -30,7 +30,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -47,13 +46,14 @@ data class TabItem(
     val title: String,
     val url: String,
     val isActive: Boolean = false,
-    val colorStart: Color = AuraColors.PurpleStart,
-    val colorEnd: Color = AuraColors.PurpleEnd
+    val colorStart: Color = AuraColors.GrayMedium,
+    val colorEnd: Color = AuraColors.GrayLight
 )
 
 /**
- * NavBar component - Slide-in purple pill navigation bar from the right edge.
+ * NavBar component - Slide-in gray navigation bar from the right edge.
  * Contains circular tab icons and a new tab button.
+ * Flat design with no shadows or 3D effects.
  */
 @Composable
 fun NavBar(
@@ -85,10 +85,6 @@ fun NavBar(
                 .fillMaxWidth()
                 .height(40.dp) // Reduced height to 40px
                 .padding(horizontal = 16.dp, vertical = 4.dp)
-                .shadow(
-                    elevation = AuraDimensions.NavBarShadowElevation,
-                    shape = RoundedCornerShape(AuraDimensions.NavBarCornerRadius)
-                )
                 .background(
                     brush = Brush.horizontalGradient(
                         colors = AuraColors.NavBarGradient
@@ -161,14 +157,14 @@ private fun TabCircle(
             Icon(
                 imageVector = Icons.Default.Home,
                 contentDescription = "Home",
-                tint = if (tab.isActive) AuraColors.PurpleDeep else Color.White,
+                tint = if (tab.isActive) AuraColors.GrayDark else Color.White,
                 modifier = Modifier.size(16.dp) // Reduced icon size
             )
         } else {
             Text(
                 text = tab.title.firstOrNull()?.uppercase() ?: "?",
                 style = AuraTypography.TabCircleText.copy(fontSize = 11.sp), // Reduced font size
-                color = if (tab.isActive) AuraColors.PurpleDeep else Color.White
+                color = if (tab.isActive) AuraColors.GrayDark else Color.White
             )
         }
     }

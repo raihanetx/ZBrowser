@@ -80,7 +80,7 @@ fun SearchHeader(
     // Animated border color based on state
     val borderColor by animateColorAsState(
         targetValue = when {
-            isLoading -> AuraColors.PurpleStart
+            isLoading -> AuraColors.GrayMedium
             isFocused -> AuraColors.Primary
             else -> AuraColors.Border
         },
@@ -135,7 +135,7 @@ fun SearchHeader(
                     textStyle = AuraTypography.SearchBarText.copy(
                         color = AuraColors.Primary
                     ),
-                    cursorBrush = SolidColor(AuraColors.PurpleStart),
+                    cursorBrush = SolidColor(AuraColors.GrayMedium),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Uri,
                         imeAction = ImeAction.Search

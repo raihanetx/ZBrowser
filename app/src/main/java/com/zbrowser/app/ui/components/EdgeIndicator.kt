@@ -18,7 +18,7 @@ import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 
 /**
- * EdgeIndicator component - Pulsing purple strip on the right edge.
+ * EdgeIndicator component - Pulsing gray strip on the right edge.
  * Indicates the swipe target for revealing the navigation bar.
  */
 @Composable
@@ -50,9 +50,9 @@ fun EdgeIndicator(
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            AuraColors.PurpleStart.copy(alpha = 0f),
-                            AuraColors.PurpleStart,
-                            AuraColors.PurpleStart.copy(alpha = 0f)
+                            AuraColors.GrayMedium.copy(alpha = 0f),
+                            AuraColors.GrayMedium,
+                            AuraColors.GrayMedium.copy(alpha = 0f)
                         )
                     )
                 )

@@ -15,7 +15,7 @@ import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 
 /**
- * TopProgressBar component - Animated purple gradient progress bar at the top of the screen.
+ * TopProgressBar component - Animated gray gradient progress bar at the top of the screen.
  * Shows loading progress with smooth animations.
  */
 @Composable
@@ -58,14 +58,14 @@ fun TopProgressBar(
                     .background(AuraColors.BorderLight)
             )
 
-            // Progress indicator with purple gradient
+            // Progress indicator with gray gradient
             Box(
                 modifier = Modifier
                     .fillMaxWidth(animatedProgress)
                     .height(AuraDimensions.ProgressBarHeight)
                     .background(
                         brush = Brush.horizontalGradient(
-                            colors = AuraColors.PurpleGradient
+                            colors = AuraColors.GrayGradient
                         )
                     )
             )
