@@ -33,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -63,12 +62,11 @@ fun SearchHeader(
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     var isFocused by remember { mutableStateOf(false) }
-    var isTextFieldReady by remember { mutableStateOf(false) }
 
-    // Request focus when entering search mode and text field is ready
-    LaunchedEffect(isSearchMode, isTextFieldReady) {
-        if (isSearchMode && isTextFieldReady) {
-            delay(150) // Small delay to ensure text field is fully composed
+    // Request focus when entering search mode
+    LaunchedEffect(isSearchMode) {
+        if (isSearchMode) {
+            delay(200) // Small delay to ensure text field is fully composed
             try {
                 focusRequester.requestFocus()
             } catch (e: Exception) {
@@ -81,7 +79,7 @@ fun SearchHeader(
     val borderColor by animateColorAsState(
         targetValue = when {
             isLoading -> AuraColors.GrayMedium
-            isFocused -> AuraColors.Primary
+            isFocused -> AuraColors.GrayDark
             else -> AuraColors.Border
         },
         animationSpec = tween(AuraDimensions.SearchFocusDuration),
@@ -124,14 +122,7 @@ fun SearchHeader(
                     onValueChange = onUrlChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { focusState ->
-                            isFocused = focusState.isFocused
-                            isTextFieldReady = true
-                            if (!focusState.isFocused && url.isEmpty()) {
-                                onSearchModeChange(false)
-                            }
-                        },
+                        .focusRequester(focusRequester),
                     textStyle = AuraTypography.SearchBarText.copy(
                         color = AuraColors.Primary
                     ),
