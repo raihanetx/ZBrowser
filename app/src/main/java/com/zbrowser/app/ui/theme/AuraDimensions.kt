@@ -15,16 +15,16 @@ object AuraDimensions {
     val SearchBarPaddingHorizontal = 16.dp
 
     // Navigation Bar
-    val NavBarHeight = 52.dp
-    val NavBarCornerRadius = 26.dp
+    val NavBarHeight = 40.dp // Reduced from 52dp to 40dp
+    val NavBarCornerRadius = 20.dp // Reduced from 26dp to 20dp
     val NavBarShadowElevation = 16.dp
     val NavBarPaddingHorizontal = 12.dp
 
     // Tab Circles
-    val TabCircleSize = 38.dp
+    val TabCircleSize = 30.dp // Reduced from 38dp to 30dp
     val TabCircleSpacing = 8.dp
-    val TabCircleIconSize = 18.dp
-    val TabCircleTextSize = 13.sp
+    val TabCircleIconSize = 16.dp // Reduced from 18dp to 16dp
+    val TabCircleTextSize = 11.sp // Reduced from 13sp to 11sp
 
     // Menu Dot
     val MenuDotSize = 34.dp

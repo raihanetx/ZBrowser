@@ -5,8 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -21,15 +19,21 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -38,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 import com.zbrowser.app.ui.theme.AuraTypography
+import kotlinx.coroutines.delay
 
 /**
  * SearchHeader component - Pill-shaped search bar at the top of the screen.
@@ -55,9 +60,22 @@ fun SearchHeader(
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
+    var isFocused by remember { mutableStateOf(false) }
+    var isTextFieldReady by remember { mutableStateOf(false) }
+
+    // Request focus when entering search mode and text field is ready
+    LaunchedEffect(isSearchMode, isTextFieldReady) {
+        if (isSearchMode && isTextFieldReady) {
+            delay(150) // Small delay to ensure text field is fully composed
+            try {
+                focusRequester.requestFocus()
+            } catch (e: Exception) {
+                // FocusRequester not yet attached, ignore
+            }
+        }
+    }
 
     // Animated border color based on state
     val borderColor by animateColorAsState(
@@ -100,13 +118,20 @@ fun SearchHeader(
             contentAlignment = Alignment.CenterStart
         ) {
             if (isSearchMode) {
-                // Search mode - text input (takes full space, receives all touch events)
+                // Search mode - text input
                 BasicTextField(
                     value = url,
                     onValueChange = onUrlChange,
                     modifier = Modifier
-                        .fillMaxWidth(),
-                    interactionSource = interactionSource,
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { focusState ->
+                            isFocused = focusState.isFocused
+                            isTextFieldReady = true
+                            if (!focusState.isFocused && url.isEmpty()) {
+                                onSearchModeChange(false)
+                            }
+                        },
                     textStyle = AuraTypography.SearchBarText.copy(
                         color = AuraColors.Primary
                     ),
@@ -117,7 +142,9 @@ fun SearchHeader(
                     ),
                     keyboardActions = KeyboardActions(
                         onSearch = {
-                            onSearch(url)
+                            if (url.isNotEmpty()) {
+                                onSearch(url)
+                            }
                             focusManager.clearFocus()
                             onSearchModeChange(false)
                         }
@@ -149,11 +176,10 @@ fun SearchHeader(
                                         .clickable { onUrlChange("") },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Search,
-                                        contentDescription = "Clear",
-                                        tint = AuraColors.Surface,
-                                        modifier = Modifier.size(12.dp)
+                                    Text(
+                                        text = "✕",
+                                        color = AuraColors.Surface,
+                                        style = AuraTypography.SearchBarText
                                     )
                                 }
                             }
@@ -165,16 +191,36 @@ fun SearchHeader(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSearchModeChange(true) },
+                        .clickable {
+                            onSearchModeChange(true)
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    // Three-dot menu icon on the left
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .clickable { onMenuClick() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Menu",
+                            tint = AuraColors.Secondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     Text(
                         text = if (url.isNotEmpty()) url else "Search or enter url",
                         style = AuraTypography.SearchBarPlaceholder.copy(
                             color = if (url.isNotEmpty()) AuraColors.Primary else AuraColors.Secondary
                         ),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
                     )
 
                     // Copy button
@@ -197,24 +243,6 @@ fun SearchHeader(
                     }
                 }
             }
-        }
-
-        // Menu dot button
-        Box(
-            modifier = Modifier
-                .size(AuraDimensions.MenuDotSize)
-                .clip(CircleShape)
-                .background(AuraColors.ClearButton)
-                .clickable { onMenuClick() },
-            contentAlignment = Alignment.Center
-        ) {
-            // Vertical dots icon
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = "Menu",
-                tint = AuraColors.Primary,
-                modifier = Modifier.size(AuraDimensions.MenuDotIconSize)
-            )
         }
     }
 }
