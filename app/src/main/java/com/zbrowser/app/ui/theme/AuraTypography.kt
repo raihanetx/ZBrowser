@@ -5,42 +5,38 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/**
- * Typography system for the Aura Browser UI.
- * Based on the new UI design specifications.
- */
 object AuraTypography {
     // Search Bar
     val SearchBarText = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 13.5.sp
+        fontSize = 14.sp
     )
 
     val SearchBarPlaceholder = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 13.5.sp
+        fontSize = 14.sp
     )
 
     // Suggestions
     val SuggestionHeader = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
-        fontSize = 10.5.sp,
-        letterSpacing = 0.6.sp
+        fontSize = 11.sp,
+        letterSpacing = 0.5.sp
     )
 
     val SuggestionItem = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 13.5.sp
+        fontSize = 14.sp
     )
 
     val SuggestionUrl = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 11.sp
+        fontSize = 12.sp
     )
 
     // Web Page
@@ -67,14 +63,14 @@ object AuraTypography {
     val PageUrl = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 11.5.sp
+        fontSize = 12.sp
     )
 
     // Search Results
     val SearchResultTitle = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
-        fontSize = 13.5.sp
+        fontSize = 14.sp
     )
 
     val SearchResultSnippet = TextStyle(
@@ -91,24 +87,51 @@ object AuraTypography {
         fontSize = 13.sp
     )
 
+    // Bottom Nav
+    val BottomNavLabel = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 10.sp
+    )
+
     // Menu
     val MenuItemLabel = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 10.5.sp
+        fontSize = 11.sp
+    )
+
+    val MenuSectionHeader = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 12.sp,
+        letterSpacing = 0.3.sp
     )
 
     // Toast
     val ToastText = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.5.sp
+        fontSize = 13.sp
+    )
+
+    // Home Page
+    val QuickLinkLabel = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp
+    )
+
+    val SectionTitle = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp
     )
 
     // URL in suggestions
     val UrlText = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 11.sp
+        fontSize = 12.sp
     )
 }

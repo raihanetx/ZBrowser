@@ -17,17 +17,12 @@ import androidx.compose.ui.graphics.Brush
 import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 
-/**
- * EdgeIndicator component - Pulsing gray strip on the right edge.
- * Indicates the swipe target for revealing the navigation bar.
- */
 @Composable
 fun EdgeIndicator(
     isVisible: Boolean,
     modifier: Modifier = Modifier
 ) {
     if (isVisible) {
-        // Infinite pulsing animation
         val infiniteTransition = rememberInfiniteTransition(label = "edgePulse")
         val alpha by infiniteTransition.animateFloat(
             initialValue = AuraColors.EdgeIndicatorAlphaMin,
@@ -35,7 +30,7 @@ fun EdgeIndicator(
             animationSpec = infiniteRepeatable(
                 animation = tween(
                     durationMillis = AuraDimensions.EdgeIndicatorPulseDuration,
-                    easing = { fraction -> fraction } // Linear
+                    easing = { fraction -> fraction }
                 ),
                 repeatMode = RepeatMode.Reverse
             ),
@@ -50,9 +45,9 @@ fun EdgeIndicator(
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            AuraColors.GrayMedium.copy(alpha = 0f),
-                            AuraColors.GrayMedium,
-                            AuraColors.GrayMedium.copy(alpha = 0f)
+                            AuraColors.BlueLighter.copy(alpha = 0f),
+                            AuraColors.BlueLighter,
+                            AuraColors.BlueLighter.copy(alpha = 0f)
                         )
                     )
                 )

@@ -6,14 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,9 +31,11 @@ import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 import com.zbrowser.app.ui.theme.AuraTypography
 
-/**
- * Data class representing a menu item in the bottom sheet.
- */
+data class MenuSection(
+    val title: String,
+    val items: List<MenuItem>
+)
+
 data class MenuItem(
     val id: String,
     val label: String,
@@ -40,15 +43,11 @@ data class MenuItem(
     val action: () -> Unit
 )
 
-/**
- * MenuSheet component - Bottom sheet with grid of menu items.
- * Shows 8 items in a 4x2 grid layout.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuSheet(
     isVisible: Boolean,
-    menuItems: List<MenuItem>,
+    menuSections: List<MenuSection>,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -68,7 +67,6 @@ fun MenuSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
                     .padding(bottom = 32.dp)
             ) {
                 // Drag handle
@@ -86,23 +84,42 @@ fun MenuSheet(
                     )
                 }
 
-                // Menu items grid
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(AuraDimensions.MenuItemGridColumns),
-                    contentPadding = PaddingValues(vertical = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(AuraDimensions.MenuItemSpacing),
-                    verticalArrangement = Arrangement.spacedBy(AuraDimensions.MenuItemSpacing)
-                ) {
-                    items(menuItems) { item ->
-                        MenuItemCard(
-                            item = item,
-                            onClick = {
-                                item.action()
-                                onDismiss()
-                            }
+                menuSections.forEach { section ->
+                    // Section header
+                    Text(
+                        text = section.title,
+                        style = AuraTypography.MenuSectionHeader,
+                        color = AuraColors.Secondary,
+                        modifier = Modifier.padding(
+                            start = 24.dp,
+                            top = 12.dp,
+                            bottom = 8.dp
                         )
+                    )
+
+                    // Menu items grid
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(AuraDimensions.MenuItemGridColumns),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(AuraDimensions.MenuItemSpacing),
+                        verticalArrangement = Arrangement.spacedBy(AuraDimensions.MenuItemSpacing),
+                        modifier = Modifier.height(
+                            if (section.items.size <= 4) 90.dp else 180.dp
+                        )
+                    ) {
+                        items(section.items) { item ->
+                            MenuItemCard(
+                                item = item,
+                                onClick = {
+                                    item.action()
+                                    onDismiss()
+                                }
+                            )
+                        }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
@@ -117,28 +134,27 @@ private fun MenuItemCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() }
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Icon circle
         Box(
             modifier = Modifier
                 .size(AuraDimensions.MenuItemIconSize)
-                .clip(CircleShape)
-                .background(AuraColors.ClearButton),
+                .clip(RoundedCornerShape(14.dp))
+                .background(AuraColors.BluePale),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = item.icon,
                 contentDescription = item.label,
-                tint = AuraColors.Primary,
-                modifier = Modifier.size(24.dp)
+                tint = AuraColors.BluePrimary,
+                modifier = Modifier.size(22.dp)
             )
         }
 
-        // Label
         Text(
             text = item.label,
             style = AuraTypography.MenuItemLabel,

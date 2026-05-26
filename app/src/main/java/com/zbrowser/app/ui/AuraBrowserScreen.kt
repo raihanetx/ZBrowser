@@ -1,13 +1,18 @@
 package com.zbrowser.app.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Bitmap
+import android.net.http.SslError
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -16,14 +21,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.FindInPage
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.PrivateConnectivity
-import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -37,10 +42,15 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.zbrowser.app.ui.components.BottomNavBar
 import com.zbrowser.app.ui.components.EdgeIndicator
+import com.zbrowser.app.ui.components.HistoryEntry
+import com.zbrowser.app.ui.components.HomePage
 import com.zbrowser.app.ui.components.MenuItem
+import com.zbrowser.app.ui.components.MenuSection
 import com.zbrowser.app.ui.components.MenuSheet
 import com.zbrowser.app.ui.components.NavBar
+import com.zbrowser.app.ui.components.QuickLink
 import com.zbrowser.app.ui.components.SearchHeader
 import com.zbrowser.app.ui.components.SuggestionItem
 import com.zbrowser.app.ui.components.SuggestionsPanel
@@ -49,10 +59,6 @@ import com.zbrowser.app.ui.components.TopProgressBar
 import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 
-/**
- * Main Aura Browser screen composable.
- * Composes all UI components together with actual WebView functionality.
- */
 @Composable
 fun AuraBrowserScreen(
     modifier: Modifier = Modifier
@@ -68,58 +74,111 @@ fun AuraBrowserScreen(
     var isNavBarVisible by remember { mutableStateOf(false) }
     var isMenuSheetVisible by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var isSecure by remember { mutableStateOf(false) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
+    var showHomePage by remember { mutableStateOf(true) }
+    var pageTitle by remember { mutableStateOf("") }
 
-    // Mock data
+    // Tab management
     val tabs = remember {
         mutableStateListOf(
-            TabItem(id = "1", title = "Home", url = "home", isActive = true),
-            TabItem(id = "2", title = "Google", url = "https://google.com"),
-            TabItem(id = "3", title = "GitHub", url = "https://github.com")
+            TabItem(id = "1", title = "Home", url = "home", isActive = true)
         )
     }
 
+    // Quick links for home page
+    val quickLinks = remember {
+        listOf(
+            QuickLink("g", "Google", "https://google.com", AuraColors.BluePrimary, AuraColors.BlueLight, "G"),
+            QuickLink("yt", "YouTube", "https://youtube.com", AuraColors.Danger, AuraColors.Danger.copy(alpha = 0.7f), "Y"),
+            QuickLink("gh", "GitHub", "https://github.com", AuraColors.Primary, AuraColors.GrayDark, "\u25C6"),
+            QuickLink("r", "Reddit", "https://reddit.com", AuraColors.Warning, AuraColors.Warning.copy(alpha = 0.7f), "R"),
+            QuickLink("w", "Wikipedia", "https://wikipedia.org", AuraColors.GrayMedium, AuraColors.GrayLight, "W"),
+            QuickLink("x", "X", "https://x.com", AuraColors.Primary, AuraColors.GrayDark, "X"),
+            QuickLink("n", "Netflix", "https://netflix.com", AuraColors.Danger, AuraColors.Danger.copy(alpha = 0.5f), "N"),
+            QuickLink("s", "Spotify", "https://spotify.com", AuraColors.Success, AuraColors.Success.copy(alpha = 0.7f), "S")
+        )
+    }
+
+    // Recent history (mock - would connect to HistoryDao)
+    val recentHistory = remember {
+        mutableStateListOf(
+            HistoryEntry("1", "Google Search", "google.com", "2m ago"),
+            HistoryEntry("2", "YouTube", "youtube.com", "15m ago"),
+            HistoryEntry("3", "GitHub", "github.com", "1h ago")
+        )
+    }
+
+    // Search suggestions
     val suggestions = remember {
         listOf(
-            SuggestionItem(id = "1", title = "Recent search", isRecent = true),
-            SuggestionItem(id = "2", title = "Another search", isRecent = true),
-            SuggestionItem(id = "3", title = "Trending topic 1"),
-            SuggestionItem(id = "4", title = "Trending topic 2"),
-            SuggestionItem(id = "5", title = "Trending topic 3")
+            SuggestionItem(id = "1", title = "best android browser 2026", subtitle = "google.com", isRecent = true),
+            SuggestionItem(id = "2", title = "kotlin jetpack compose tutorial", subtitle = "developer.android.com", isRecent = true),
+            SuggestionItem(id = "3", title = "weather today", isRecent = true),
+            SuggestionItem(id = "4", title = "top trending news"),
+            SuggestionItem(id = "5", title = "new movie releases 2026"),
+            SuggestionItem(id = "6", title = "best phones under 500")
         )
     }
 
-    val menuItems = remember {
+    // Menu sections
+    val menuSections = remember {
         listOf(
-            MenuItem(id = "home", label = "Home", icon = Icons.Default.Home) {
-                webView?.loadUrl("https://www.google.com")
-                url = "https://www.google.com"
-                currentUrl = "https://www.google.com"
-            },
-            MenuItem(id = "history", label = "History", icon = Icons.Default.History) { },
-            MenuItem(id = "downloads", label = "Downloads", icon = Icons.Default.SaveAlt) { },
-            MenuItem(id = "private", label = "Private", icon = Icons.Default.PrivateConnectivity) { },
-            MenuItem(id = "find", label = "Find", icon = Icons.Default.FindInPage) { },
-            MenuItem(id = "share", label = "Share", icon = Icons.Default.Share) { },
-            MenuItem(id = "print", label = "Print", icon = Icons.Default.Print) { },
-            MenuItem(id = "settings", label = "Settings", icon = Icons.Default.Settings) { }
+            MenuSection(
+                title = "Navigation",
+                items = listOf(
+                    MenuItem("home", "Home", Icons.Default.Home) {
+                        webView?.loadUrl("https://www.google.com")
+                        url = "https://www.google.com"
+                        currentUrl = "https://www.google.com"
+                        showHomePage = false
+                    },
+                    MenuItem("back", "Back", Icons.AutoMirrored.Filled.ArrowBack) {
+                        if (webView?.canGoBack() == true) webView?.goBack()
+                    },
+                    MenuItem("forward", "Forward", Icons.AutoMirrored.Filled.ArrowForward) {
+                        if (webView?.canGoForward() == true) webView?.goForward()
+                    },
+                    MenuItem("bookmarks", "Bookmarks", Icons.Default.Bookmark) { }
+                )
+            ),
+            MenuSection(
+                title = "Tools",
+                items = listOf(
+                    MenuItem("find", "Find", Icons.Default.FindInPage) { },
+                    MenuItem("share", "Share", Icons.Default.Share) {
+                        if (currentUrl.isNotEmpty()) {
+                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, currentUrl)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share URL"))
+                        }
+                    },
+                    MenuItem("print", "Print", Icons.Default.Print) { },
+                    MenuItem("settings", "Settings", Icons.Default.Settings) { }
+                )
+            )
         )
     }
 
-    // Function to handle search
+    fun showToast(msg: String) {
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    }
+
     fun handleSearch(query: String) {
         if (query.isEmpty()) return
 
         isLoading = true
-        progress = 0.3f
+        progress = 0.1f
+        showHomePage = false
 
-        // Check if it's a URL or search query
         val urlToLoad = if (query.startsWith("http://") || query.startsWith("https://")) {
             query
         } else if (query.contains(".") && !query.contains(" ")) {
-            // Likely a URL without protocol
             "https://$query"
         } else {
-            // Search query - use Google search
             "https://www.google.com/search?q=${query.replace(" ", "+")}"
         }
 
@@ -127,9 +186,97 @@ fun AuraBrowserScreen(
         currentUrl = urlToLoad
         webView?.loadUrl(urlToLoad)
         isSearchMode = false
+
+        // Update active tab
+        val activeIndex = tabs.indexOfFirst { it.isActive }
+        if (activeIndex >= 0) {
+            tabs[activeIndex] = tabs[activeIndex].copy(title = query.take(20), url = urlToLoad)
+        }
     }
 
-    // Responsive layout detection
+    fun navigateToQuickLink(link: QuickLink) {
+        url = link.url
+        currentUrl = link.url
+        showHomePage = false
+        isLoading = true
+        progress = 0.1f
+        webView?.loadUrl(link.url)
+
+        // Update active tab
+        val activeIndex = tabs.indexOfFirst { it.isActive }
+        if (activeIndex >= 0) {
+            tabs[activeIndex] = tabs[activeIndex].copy(title = link.title, url = link.url)
+        }
+    }
+
+    fun navigateToHistory(entry: HistoryEntry) {
+        val urlToLoad = if (entry.url.startsWith("http")) entry.url else "https://${entry.url}"
+        url = urlToLoad
+        currentUrl = urlToLoad
+        showHomePage = false
+        isLoading = true
+        progress = 0.1f
+        webView?.loadUrl(urlToLoad)
+    }
+
+    fun goHome() {
+        showHomePage = true
+        url = ""
+        currentUrl = ""
+        isSearchMode = false
+        webView?.loadUrl("about:blank")
+
+        val activeIndex = tabs.indexOfFirst { it.isActive }
+        if (activeIndex >= 0) {
+            tabs[activeIndex] = tabs[activeIndex].copy(title = "Home", url = "home")
+        }
+    }
+
+    fun newTab() {
+        tabs.forEachIndexed { i, tab -> tabs[i] = tab.copy(isActive = false) }
+        tabs.add(
+            TabItem(
+                id = (tabs.size + 1).toString(),
+                title = "New Tab",
+                url = "home",
+                isActive = true
+            )
+        )
+        goHome()
+        isNavBarVisible = false
+    }
+
+    fun switchToTab(tab: TabItem) {
+        tabs.forEachIndexed { i, t -> tabs[i] = t.copy(isActive = t.id == tab.id) }
+        if (tab.url == "home") {
+            goHome()
+        } else {
+            url = tab.url
+            currentUrl = tab.url
+            showHomePage = false
+            webView?.loadUrl(tab.url)
+        }
+        isNavBarVisible = false
+    }
+
+    fun closeTab(tab: TabItem) {
+        val index = tabs.indexOfFirst { it.id == tab.id }
+        if (index < 0) return
+
+        tabs.removeAt(index)
+
+        if (tabs.isEmpty()) {
+            newTab()
+            return
+        }
+
+        if (tab.isActive) {
+            val newIndex = if (index > 0) index - 1 else 0
+            tabs[newIndex] = tabs[newIndex].copy(isActive = true)
+            switchToTab(tabs[newIndex])
+        }
+    }
+
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 500
 
@@ -139,24 +286,19 @@ fun AuraBrowserScreen(
             .background(AuraColors.Background)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures { change, dragAmount ->
-                    if (dragAmount < -50) { // Swipe left to reveal nav bar
+                    if (dragAmount < -50) {
                         isNavBarVisible = true
-                    } else if (dragAmount > 50) { // Swipe right to dismiss
+                    } else if (dragAmount > 50) {
                         isNavBarVisible = false
                     }
                 }
             }
     ) {
-        // Main content area
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    if (isTablet) {
-                        Modifier.padding(AuraDimensions.TabletPadding)
-                    } else {
-                        Modifier
-                    }
+                    if (isTablet) Modifier.padding(AuraDimensions.TabletPadding) else Modifier
                 )
         ) {
             // Top progress bar
@@ -168,17 +310,22 @@ fun AuraBrowserScreen(
 
             // Search header
             SearchHeader(
-                url = url,
+                url = if (showHomePage) "" else url,
                 isSearchMode = isSearchMode,
-                onUrlChange = { url = it },
-                onSearch = { searchQuery ->
-                    handleSearch(searchQuery)
-                },
-                onSearchModeChange = { isSearchMode = it },
-                onCopyUrl = { /* Handle copy */ },
-                onMenuClick = { isMenuSheetVisible = true },
+                isSecure = isSecure,
                 isLoading = isLoading,
-                modifier = Modifier.padding(top = 8.dp)
+                onUrlChange = { url = it },
+                onSearch = { query -> handleSearch(query) },
+                onSearchModeChange = { isSearchMode = it },
+                onCopyUrl = {
+                    if (currentUrl.isNotEmpty()) {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("url", currentUrl))
+                        showToast("URL copied")
+                    }
+                },
+                onMenuClick = { isMenuSheetVisible = true },
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
             )
 
             // Suggestions panel
@@ -189,79 +336,171 @@ fun AuraBrowserScreen(
                     isSearchMode = false
                     handleSearch(suggestion.title)
                 },
-                onClearHistory = { /* Handle clear history */ },
+                onClearHistory = { showToast("History cleared") },
                 isVisible = isSearchMode && url.isEmpty()
             )
 
-            // WebView content area
+            // Content area
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .background(AuraColors.Background)
             ) {
-                // WebView
-                AndroidView(
-                    factory = { context ->
-                        WebView(context).apply {
-                            webView = this
+                // Home page or WebView
+                if (showHomePage) {
+                    HomePage(
+                        quickLinks = quickLinks,
+                        recentHistory = recentHistory,
+                        onQuickLinkClick = { link -> navigateToQuickLink(link) },
+                        onHistoryClick = { entry -> navigateToHistory(entry) }
+                    )
+                } else {
+                    AndroidView(
+                        factory = { context ->
+                            WebView(context).apply {
+                                webView = this
 
-                            // Configure WebView settings
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                databaseEnabled = true
-                                setSupportZoom(true)
-                                builtInZoomControls = true
-                                displayZoomControls = false
-                                setSupportMultipleWindows(false)
-                                javaScriptCanOpenWindowsAutomatically = false
-                                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                                allowFileAccess = false
-                                allowContentAccess = false
-                                loadsImagesAutomatically = true
-                                cacheMode = WebSettings.LOAD_DEFAULT
-                            }
+                                settings.apply {
+                                    javaScriptEnabled = true
+                                    domStorageEnabled = true
+                                    databaseEnabled = true
+                                    setSupportZoom(true)
+                                    builtInZoomControls = true
+                                    displayZoomControls = false
+                                    setSupportMultipleWindows(false)
+                                    javaScriptCanOpenWindowsAutomatically = false
+                                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                    allowFileAccess = false
+                                    allowContentAccess = false
+                                    loadsImagesAutomatically = true
+                                    cacheMode = WebSettings.LOAD_DEFAULT
+                                }
 
-                            // Set WebViewClient to handle navigation
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(
-                                    view: WebView?,
-                                    request: WebResourceRequest?
-                                ): Boolean {
-                                    val url = request?.url?.toString() ?: return false
-                                    // Allow http and https URLs
-                                    if (url.startsWith("http://") || url.startsWith("https://")) {
-                                        return false // Let WebView handle it
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(
+                                        view: WebView?,
+                                        request: WebResourceRequest?
+                                    ): Boolean {
+                                        val reqUrl = request?.url?.toString() ?: return false
+                                        if (reqUrl.startsWith("http://") || reqUrl.startsWith("https://")) {
+                                            return false
+                                        }
+                                        return true
                                     }
-                                    return true // Block other schemes
+
+                                    override fun onPageStarted(
+                                        view: WebView?,
+                                        pageUrl: String?,
+                                        favicon: Bitmap?
+                                    ) {
+                                        super.onPageStarted(view, pageUrl, favicon)
+                                        isLoading = true
+                                        progress = 0.2f
+                                    }
+
+                                    override fun onPageFinished(view: WebView?, pageUrl: String?) {
+                                        super.onPageFinished(view, pageUrl)
+                                        isLoading = false
+                                        progress = 1f
+                                        currentUrl = pageUrl ?: ""
+                                        url = pageUrl ?: ""
+                                        canGoBack = view?.canGoBack() == true
+                                        canGoForward = view?.canGoForward() == true
+
+                                        // Update tab title
+                                        val activeIndex = tabs.indexOfFirst { it.isActive }
+                                        if (activeIndex >= 0 && pageUrl != null) {
+                                            val title = view?.title ?: pageUrl
+                                            tabs[activeIndex] = tabs[activeIndex].copy(
+                                                title = title.take(20),
+                                                url = pageUrl
+                                            )
+                                        }
+
+                                        // Check SSL
+                                        isSecure = pageUrl?.startsWith("https://") == true
+                                    }
+
+                                    override fun onReceivedError(
+                                        view: WebView?,
+                                        request: WebResourceRequest?,
+                                        error: WebResourceError?
+                                    ) {
+                                        super.onReceivedError(view, request, error)
+                                        if (request?.isForMainFrame == true) {
+                                            isLoading = false
+                                            progress = 0f
+                                        }
+                                    }
+
+                                    override fun onReceivedSslError(
+                                        view: WebView?,
+                                        handler: SslErrorHandler?,
+                                        error: SslError?
+                                    ) {
+                                        handler?.cancel()
+                                        isSecure = false
+                                    }
                                 }
 
-                                override fun onPageFinished(view: WebView?, pageUrl: String?) {
-                                    super.onPageFinished(view, pageUrl)
-                                    isLoading = false
-                                    progress = 1f
-                                    currentUrl = pageUrl ?: ""
-                                    url = pageUrl ?: ""
+                                webChromeClient = object : WebChromeClient() {
+                                    override fun onProgressChanged(
+                                        view: WebView?,
+                                        newProgress: Int
+                                    ) {
+                                        progress = newProgress / 100f
+                                        canGoBack = view?.canGoBack() == true
+                                        canGoForward = view?.canGoForward() == true
+                                    }
+
+                                    override fun onReceivedTitle(
+                                        view: WebView?,
+                                        title: String?
+                                    ) {
+                                        super.onReceivedTitle(view, title)
+                                        if (title != null) {
+                                            pageTitle = title
+                                        }
+                                    }
                                 }
+
+                                loadUrl("about:blank")
                             }
-
-                            // Set WebChromeClient for progress updates
-                            webChromeClient = object : WebChromeClient() {
-                                override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                    progress = newProgress / 100f
-                                }
-                            }
-
-                            // Load initial URL
-                            loadUrl("https://www.google.com")
-                            url = "https://www.google.com"
-                            currentUrl = "https://www.google.com"
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
+
+            // Bottom Navigation Bar
+            BottomNavBar(
+                canGoBack = canGoBack,
+                canGoForward = canGoForward,
+                isLoading = isLoading,
+                tabCount = tabs.size,
+                onBack = {
+                    if (webView?.canGoBack() == true) {
+                        webView?.goBack()
+                    }
+                },
+                onForward = {
+                    if (webView?.canGoForward() == true) {
+                        webView?.goForward()
+                    }
+                },
+                onRefresh = {
+                    if (isLoading) {
+                        webView?.stopLoading()
+                        isLoading = false
+                    } else {
+                        webView?.reload()
+                    }
+                },
+                onHome = { goHome() },
+                onTabs = { isNavBarVisible = !isNavBarVisible },
+                onMenu = { isMenuSheetVisible = true }
+            )
         }
 
         // Edge indicator (right side)
@@ -274,29 +513,9 @@ fun AuraBrowserScreen(
         NavBar(
             tabs = tabs,
             isVisible = isNavBarVisible,
-            onTabClick = { tab ->
-                // Handle tab click - load the tab's URL
-                if (tab.url.isNotEmpty() && tab.url != "home") {
-                    webView?.loadUrl(tab.url)
-                    url = tab.url
-                    currentUrl = tab.url
-                }
-                isNavBarVisible = false
-            },
-            onNewTabClick = {
-                // Handle new tab
-                tabs.add(
-                    TabItem(
-                        id = (tabs.size + 1).toString(),
-                        title = "New Tab",
-                        url = ""
-                    )
-                )
-                webView?.loadUrl("https://www.google.com")
-                url = "https://www.google.com"
-                currentUrl = "https://www.google.com"
-                isNavBarVisible = false
-            },
+            onTabClick = { tab -> switchToTab(tab) },
+            onCloseTab = { tab -> closeTab(tab) },
+            onNewTabClick = { newTab() },
             onDismiss = { isNavBarVisible = false }
         )
     }
@@ -304,7 +523,7 @@ fun AuraBrowserScreen(
     // Menu sheet
     MenuSheet(
         isVisible = isMenuSheetVisible,
-        menuItems = menuItems,
+        menuSections = menuSections,
         onDismiss = { isMenuSheetVisible = false }
     )
 }

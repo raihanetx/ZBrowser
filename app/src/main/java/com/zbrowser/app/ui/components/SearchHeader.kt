@@ -1,6 +1,11 @@
 package com.zbrowser.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +24,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -33,65 +40,77 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 import com.zbrowser.app.ui.theme.AuraTypography
 import kotlinx.coroutines.delay
 
-/**
- * SearchHeader component - Pill-shaped search bar at the top of the screen.
- * Supports two modes: display mode (URL) and search mode (text input).
- */
 @Composable
 fun SearchHeader(
     url: String,
     isSearchMode: Boolean,
+    isSecure: Boolean,
+    isLoading: Boolean,
     onUrlChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     onSearchModeChange: (Boolean) -> Unit,
     onCopyUrl: () -> Unit,
     onMenuClick: () -> Unit,
-    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     var isFocused by remember { mutableStateOf(false) }
 
-    // Request focus when entering search mode
     LaunchedEffect(isSearchMode) {
         if (isSearchMode) {
-            delay(200) // Small delay to ensure text field is fully composed
+            delay(100)
             try {
                 focusRequester.requestFocus()
-            } catch (e: Exception) {
-                // FocusRequester not yet attached, ignore
-            }
+            } catch (_: Exception) {}
         }
     }
 
-    // Animated border color based on state
     val borderColor by animateColorAsState(
         targetValue = when {
-            isLoading -> AuraColors.GrayMedium
-            isFocused -> AuraColors.GrayDark
+            isFocused -> AuraColors.BluePrimary
+            isLoading -> AuraColors.BlueLighter
             else -> AuraColors.Border
         },
         animationSpec = tween(AuraDimensions.SearchFocusDuration),
         label = "borderColor"
     )
 
-    // Animated background color
     val backgroundColor by animateColorAsState(
-        targetValue = AuraColors.Surface,
+        targetValue = if (isFocused || isSearchMode) AuraColors.Surface else AuraColors.SurfaceVariant,
         animationSpec = tween(AuraDimensions.SearchFocusDuration),
         label = "backgroundColor"
     )
+
+    // Shimmer effect when loading
+    val shimmerOffset = if (isLoading) {
+        val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+        val offset by infiniteTransition.animateFloat(
+            initialValue = -1f,
+            targetValue = 2f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "shimmerOffset"
+        )
+        offset
+    } else 0f
 
     Row(
         modifier = modifier
@@ -107,6 +126,17 @@ fun SearchHeader(
                 .height(AuraDimensions.SearchBarHeight)
                 .clip(RoundedCornerShape(AuraDimensions.SearchBarCornerRadius))
                 .background(backgroundColor)
+                .then(
+                    if (isLoading) {
+                        Modifier.background(
+                            brush = Brush.linearGradient(
+                                colors = AuraColors.SearchShimmer,
+                                start = Offset(shimmerOffset * 500f, 0f),
+                                end = Offset((shimmerOffset + 0.5f) * 500f, 0f)
+                            )
+                        )
+                    } else Modifier
+                )
                 .border(
                     width = AuraDimensions.SearchBarBorderWidth,
                     color = borderColor,
@@ -116,26 +146,24 @@ fun SearchHeader(
             contentAlignment = Alignment.CenterStart
         ) {
             if (isSearchMode) {
-                // Search mode - text input
                 BasicTextField(
                     value = url,
                     onValueChange = onUrlChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focusRequester),
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { isFocused = it.isFocused },
                     textStyle = AuraTypography.SearchBarText.copy(
                         color = AuraColors.Primary
                     ),
-                    cursorBrush = SolidColor(AuraColors.GrayMedium),
+                    cursorBrush = SolidColor(AuraColors.BluePrimary),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Uri,
                         imeAction = ImeAction.Search
                     ),
                     keyboardActions = KeyboardActions(
                         onSearch = {
-                            if (url.isNotEmpty()) {
-                                onSearch(url)
-                            }
+                            if (url.isNotEmpty()) onSearch(url)
                             focusManager.clearFocus()
                             onSearchModeChange(false)
                         }
@@ -149,15 +177,13 @@ fun SearchHeader(
                             Box(modifier = Modifier.weight(1f)) {
                                 if (url.isEmpty()) {
                                     Text(
-                                        text = "Search or enter url",
+                                        text = "Search or enter URL",
                                         style = AuraTypography.SearchBarPlaceholder,
-                                        color = AuraColors.Secondary
+                                        color = AuraColors.TextHint
                                     )
                                 }
                                 innerTextField()
                             }
-
-                            // Clear button
                             if (url.isNotEmpty()) {
                                 Box(
                                     modifier = Modifier
@@ -168,9 +194,9 @@ fun SearchHeader(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "✕",
-                                        color = AuraColors.Surface,
-                                        style = AuraTypography.SearchBarText
+                                        text = "\u2715",
+                                        color = AuraColors.Secondary,
+                                        fontSize = 11.sp
                                     )
                                 }
                             }
@@ -178,40 +204,32 @@ fun SearchHeader(
                     }
                 )
             } else {
-                // Display mode - URL text (clickable to enter search mode)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            onSearchModeChange(true)
-                        },
+                        .clickable { onSearchModeChange(true) },
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Three-dot menu icon on the left
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .clickable { onMenuClick() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Menu",
-                            tint = AuraColors.Secondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    // SSL Lock Icon
+                    Icon(
+                        imageVector = if (isSecure) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = if (isSecure) "Secure" else "Not secure",
+                        tint = if (isSecure) AuraColors.Success else AuraColors.Danger,
+                        modifier = Modifier.size(16.dp)
+                    )
 
+                    // URL Text
                     Text(
-                        text = if (url.isNotEmpty()) url else "Search or enter url",
+                        text = if (url.isNotEmpty()) {
+                            url.removePrefix("https://").removePrefix("http://")
+                        } else "Search or enter URL",
                         style = AuraTypography.SearchBarPlaceholder.copy(
-                            color = if (url.isNotEmpty()) AuraColors.Primary else AuraColors.Secondary
+                            color = if (url.isNotEmpty()) AuraColors.Primary else AuraColors.TextHint
                         ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
 
                     // Copy button
@@ -220,20 +238,37 @@ fun SearchHeader(
                             modifier = Modifier
                                 .size(AuraDimensions.CircleIconButtonSize)
                                 .clip(CircleShape)
-                                .background(AuraColors.Success)
+                                .background(AuraColors.BluePale)
                                 .clickable { onCopyUrl() },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
                                 contentDescription = "Copy URL",
-                                tint = AuraColors.Surface,
-                                modifier = Modifier.size(12.dp)
+                                tint = AuraColors.BluePrimary,
+                                modifier = Modifier.size(11.dp)
                             )
                         }
                     }
                 }
             }
+        }
+
+        // Three-dot menu button (right side)
+        Box(
+            modifier = Modifier
+                .size(AuraDimensions.MenuDotSize)
+                .clip(CircleShape)
+                .border(1.dp, AuraColors.Border, CircleShape)
+                .clickable { onMenuClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "Menu",
+                tint = AuraColors.Secondary,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

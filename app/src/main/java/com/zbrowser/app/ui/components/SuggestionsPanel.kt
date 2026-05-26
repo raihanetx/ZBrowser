@@ -1,9 +1,13 @@
 package com.zbrowser.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,9 +17,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,27 +34,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 import com.zbrowser.app.ui.theme.AuraTypography
 
-/**
- * Data class representing a suggestion item.
- */
 data class SuggestionItem(
     val id: String,
     val title: String,
     val subtitle: String? = null,
-    val icon: ImageVector? = null,
     val isRecent: Boolean = false
 )
 
-/**
- * SuggestionsPanel component - Dropdown panel showing search suggestions.
- * Appears below the search bar when in search mode.
- */
 @Composable
 fun SuggestionsPanel(
     suggestions: List<SuggestionItem>,
@@ -61,63 +58,75 @@ fun SuggestionsPanel(
 ) {
     AnimatedVisibility(
         visible = isVisible,
-        enter = fadeIn(
-            animationSpec = androidx.compose.animation.core.tween(
-                durationMillis = AuraDimensions.SuggestionPanelDuration
-            )
-        ) + scaleIn(
-            animationSpec = androidx.compose.animation.core.tween(
-                durationMillis = AuraDimensions.SuggestionPanelDuration
-            ),
-            initialScale = 0.98f
-        ) + slideInVertically(
-            animationSpec = androidx.compose.animation.core.tween(
-                durationMillis = AuraDimensions.SuggestionPanelDuration
-            ),
-            initialOffsetY = { -6 }
-        )
+        enter = fadeIn(tween(AuraDimensions.SuggestionPanelDuration)) +
+                scaleIn(
+                    tween(AuraDimensions.SuggestionPanelDuration),
+                    initialScale = 0.97f
+                ) +
+                slideInVertically(
+                    tween(AuraDimensions.SuggestionPanelDuration),
+                    initialOffsetY = { -8 }
+                ),
+        exit = fadeOut(tween(150)) +
+                scaleOut(tween(150), targetScale = 0.97f) +
+                slideOutVertically(tween(150), targetOffsetY = { -8 })
     ) {
         Column(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = AuraDimensions.ContentPaddingHorizontal)
+                .heightIn(max = 400.dp)
                 .shadow(
                     elevation = AuraDimensions.SuggestionPanelShadowElevation,
-                    shape = RoundedCornerShape(AuraDimensions.SuggestionPanelCornerRadius)
+                    shape = RoundedCornerShape(AuraDimensions.SuggestionPanelCornerRadius),
+                    ambientColor = AuraColors.BlueDark.copy(alpha = 0.06f),
+                    spotColor = AuraColors.BlueDark.copy(alpha = 0.1f)
                 )
                 .background(
                     color = AuraColors.Surface,
                     shape = RoundedCornerShape(AuraDimensions.SuggestionPanelCornerRadius)
                 )
-                .padding(vertical = 12.dp)
+                .padding(vertical = 8.dp)
         ) {
-            // Recent suggestions header
-            if (suggestions.any { it.isRecent }) {
+            // Recent suggestions
+            val recentItems = suggestions.filter { it.isRecent }
+            val trendingItems = suggestions.filter { !it.isRecent }
+
+            if (recentItems.isNotEmpty()) {
                 SuggestionGroupHeader(
                     title = "Recent",
                     onClear = onClearHistory
                 )
-
-                suggestions.filter { it.isRecent }.forEach { suggestion ->
+                recentItems.forEach { suggestion ->
                     SuggestionRow(
                         suggestion = suggestion,
+                        iconTint = AuraColors.Secondary,
+                        iconBg = AuraColors.SurfaceVariant,
                         onClick = { onSuggestionClick(suggestion) }
                     )
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
+                if (trendingItems.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(AuraColors.BorderLight)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
             }
 
-            // Trending suggestions
-            if (suggestions.any { !it.isRecent }) {
+            if (trendingItems.isNotEmpty()) {
                 SuggestionGroupHeader(
                     title = "Suggestions",
                     onClear = null
                 )
-
-                suggestions.filter { !it.isRecent }.forEach { suggestion ->
+                trendingItems.forEach { suggestion ->
                     SuggestionRow(
                         suggestion = suggestion,
+                        iconTint = AuraColors.BluePrimary,
+                        iconBg = AuraColors.BluePale,
                         onClick = { onSuggestionClick(suggestion) }
                     )
                 }
@@ -135,7 +144,7 @@ private fun SuggestionGroupHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -144,7 +153,6 @@ private fun SuggestionGroupHeader(
             style = AuraTypography.SuggestionHeader,
             color = AuraColors.Secondary
         )
-
         if (onClear != null) {
             Icon(
                 imageVector = Icons.Default.Close,
@@ -161,6 +169,8 @@ private fun SuggestionGroupHeader(
 @Composable
 private fun SuggestionRow(
     suggestion: SuggestionItem,
+    iconTint: Color,
+    iconBg: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -168,42 +178,43 @@ private fun SuggestionRow(
         modifier = modifier
             .fillMaxWidth()
             .height(AuraDimensions.SuggestionItemHeight)
-            .clickable { onClick() }
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Icon
         Box(
             modifier = Modifier
                 .size(AuraDimensions.SuggestionIconSize)
                 .clip(CircleShape)
-                .background(AuraColors.ClearButton),
+                .background(iconBg),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = suggestion.icon ?: Icons.Default.Search,
+                imageVector = if (suggestion.isRecent) Icons.Default.AccessTime else Icons.Default.Search,
                 contentDescription = null,
-                tint = AuraColors.Secondary,
-                modifier = Modifier.size(16.dp)
+                tint = iconTint,
+                modifier = Modifier.size(15.dp)
             )
         }
 
-        // Text content
         Column(
             modifier = Modifier.weight(1f)
         ) {
             Text(
                 text = suggestion.title,
                 style = AuraTypography.SuggestionItem,
-                color = AuraColors.Primary
+                color = AuraColors.Primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-
             if (suggestion.subtitle != null) {
                 Text(
                     text = suggestion.subtitle,
                     style = AuraTypography.SuggestionUrl,
-                    color = AuraColors.Secondary
+                    color = AuraColors.Secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

@@ -14,32 +14,24 @@ import androidx.compose.ui.graphics.Brush
 import com.zbrowser.app.ui.theme.AuraColors
 import com.zbrowser.app.ui.theme.AuraDimensions
 
-/**
- * TopProgressBar component - Animated gray gradient progress bar at the top of the screen.
- * Shows loading progress with smooth animations.
- */
 @Composable
 fun TopProgressBar(
     progress: Float,
     isVisible: Boolean,
     modifier: Modifier = Modifier
 ) {
-    // Animate progress value
     val animatedProgress by animateFloatAsState(
         targetValue = if (isVisible) progress else 0f,
         animationSpec = tween(
             durationMillis = AuraDimensions.ProgressAnimationDuration,
-            easing = { fraction -> fraction } // Linear for progress
+            easing = { fraction -> fraction }
         ),
         label = "progress"
     )
 
-    // Animate alpha for fade effect
     val animatedAlpha by animateFloatAsState(
         targetValue = if (isVisible) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = AuraDimensions.ProgressFadeDuration
-        ),
+        animationSpec = tween(AuraDimensions.ProgressFadeDuration),
         label = "alpha"
     )
 
@@ -55,17 +47,17 @@ fun TopProgressBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(AuraDimensions.ProgressBarHeight)
-                    .background(AuraColors.BorderLight)
+                    .background(AuraColors.BluePale.copy(alpha = 0.5f))
             )
 
-            // Progress indicator with gray gradient
+            // Progress indicator with blue gradient
             Box(
                 modifier = Modifier
                     .fillMaxWidth(animatedProgress)
                     .height(AuraDimensions.ProgressBarHeight)
                     .background(
                         brush = Brush.horizontalGradient(
-                            colors = AuraColors.GrayGradient
+                            colors = AuraColors.ProgressGradient
                         )
                     )
             )
